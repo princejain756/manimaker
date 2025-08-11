@@ -62,7 +62,7 @@ EOF`);
     console.log('[vps-sandbox] Setting up React Vite app...');
 
     // Create directory structure
-    await execAsync(`sudo mkdir -p ${sandboxDir}/src`);
+    await execAsync(`sudo mkdir -p "${sandboxDir}/src"`);
 
     // Write package.json
     const packageJson = {
@@ -205,14 +205,14 @@ body {
     await writeFile(`${sandboxDir}/src/index.css`, indexCss);
 
     // Set proper ownership
-    await execAsync(`sudo chown -R ${VPS_CONFIG.user}:${VPS_CONFIG.group} ${sandboxDir}`);
+    await execAsync(`sudo chown -R ${VPS_CONFIG.user}:${VPS_CONFIG.group} "${sandboxDir}"`);
   }
 
   async function startDevServer(sandboxDir: string, port: number) {
     console.log(`[vps-sandbox] Starting dev server on port ${port}...`);
 
     // Start Vite in background and capture PID
-    const { stdout } = await execAsync(`cd ${sandboxDir} && sudo -u ${VPS_CONFIG.user} npm run dev -- --port ${port} &> /dev/null & echo $!`);
+    const { stdout } = await execAsync(`cd "${sandboxDir}" && sudo -u ${VPS_CONFIG.user} npm run dev -- --port ${port} &> /dev/null & echo $!`);
     const pid = parseInt(stdout.trim());
 
     if (isNaN(pid)) {
@@ -344,20 +344,20 @@ EOF`);
     // Generate unique sandbox ID and port
     const sandboxId = `sandbox_${timestamp}`;
     const port = await findAvailablePort();
-    const sandboxDir = path.join(VPS_CONFIG.sandboxDir, uniqueUserName);
+    const sandboxDir = `${VPS_CONFIG.sandboxDir}/${uniqueUserName}`;
     
     console.log(`[vps-sandbox] Creating sandbox: ${sandboxId} for user: ${uniqueUserName} on port ${port}`);
 
     // Create sandbox directory
-    await execAsync(`sudo mkdir -p ${sandboxDir}`);
-    await execAsync(`sudo chown ${VPS_CONFIG.user}:${VPS_CONFIG.group} ${sandboxDir}`);
+    await execAsync(`sudo mkdir -p "${sandboxDir}"`);
+    await execAsync(`sudo chown ${VPS_CONFIG.user}:${VPS_CONFIG.group} "${sandboxDir}"`);
 
     // Set up React Vite app
     await setupReactViteApp(sandboxDir);
 
     // Install dependencies
     console.log(`[vps-sandbox] Installing dependencies...`);
-    await execAsync(`cd ${sandboxDir} && sudo -u ${VPS_CONFIG.user} npm install`);
+    await execAsync(`cd "${sandboxDir}" && sudo -u ${VPS_CONFIG.user} npm install`);
 
     // Start the development server
     const { pid } = await startDevServer(sandboxDir, port);

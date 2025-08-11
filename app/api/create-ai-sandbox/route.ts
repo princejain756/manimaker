@@ -29,8 +29,8 @@ export async function POST() {
 
     try {
       // Create sandbox directory
-      await execAsync(`sudo mkdir -p ${sandboxPath}`);
-      await execAsync(`sudo chown www-data:www-data ${sandboxPath}`);
+      await execAsync(`sudo mkdir -p "${sandboxPath}"`);
+      await execAsync(`sudo chown www-data:www-data "${sandboxPath}"`);
       console.log(`[create-ai-sandbox] Created directory: ${sandboxPath}`);
     } catch (error) {
       console.error('[create-ai-sandbox] Error in createSandboxDirectory:', error);
@@ -42,7 +42,7 @@ export async function POST() {
       console.log('[create-ai-sandbox] Setting up Vite React app...');
       
       // Create directory structure
-      await execAsync(`sudo mkdir -p ${sandboxPath}/src`, { cwd: sandboxPath });
+      await execAsync(`sudo mkdir -p "${sandboxPath}/src"`);
       
       // Create package.json
       const packageJson = {
@@ -195,15 +195,15 @@ body {
       console.log('✓ src/index.css created');
 
       // Set proper permissions
-      await execAsync(`sudo chown -R www-data:www-data ${sandboxPath}`);
-      await execAsync(`sudo chmod -R 755 ${sandboxPath}`);
+      await execAsync(`sudo chown -R www-data:www-data "${sandboxPath}"`);
+      await execAsync(`sudo chmod -R 755 "${sandboxPath}"`);
       
       console.log('[create-ai-sandbox] All files created successfully!');
 
       // Install dependencies
       console.log('[create-ai-sandbox] Installing dependencies...');
       try {
-        await execAsync(`cd ${sandboxPath} && sudo -u www-data npm install`, { timeout: 60000 });
+        await execAsync(`cd "${sandboxPath}" && sudo -u www-data npm install`, { timeout: 60000 });
         console.log('✓ Dependencies installed successfully');
       } catch (error) {
         console.log('⚠ Warning: npm install had issues, continuing anyway');
@@ -216,7 +216,7 @@ body {
         await execAsync(`sudo pkill -f "vite.*--host" || true`);
         
         // Start Vite dev server
-        execAsync(`cd ${sandboxPath} && sudo -u www-data npm run dev > /tmp/vite-${userId}.log 2>&1 &`);
+        execAsync(`cd "${sandboxPath}" && sudo -u www-data npm run dev > /tmp/vite-${userId}.log 2>&1 &`);
         console.log(`✓ Vite dev server started for ${userId}`);
         
         // Wait for server to be ready
