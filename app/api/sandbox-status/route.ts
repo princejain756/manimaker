@@ -19,27 +19,46 @@ export async function GET() {
       try {
         // Check if we're using VPS or E2B
         if (appConfig.sandbox.type === 'vps') {
-          // Use VPS sandbox status API
-          const vpsResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/vps-sandbox/manage`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              action: 'status',
-              sandboxId: global.activeSandbox.sandboxId
-            })
-          });
-          
-          if (vpsResponse.ok) {
-            const vpsStatus = await vpsResponse.json();
-            sandboxHealthy = vpsStatus.healthy;
-            sandboxInfo = vpsStatus.sandboxData || {
-              sandboxId: global.sandboxData?.sandboxId,
-              url: global.sandboxData?.url,
+          // Direct VPS sandbox status check (avoid self-referencing fetch)
+          try {
+            const { exec } = await import('child_process');
+            const { promisify } = await import('util');
+            const execAsync = promisify(exec);
+            
+            let isHealthy = false;
+            
+            // Check if process is still running
+            if (global.activeSandbox.pid) {
+              try {
+                await execAsync(`sudo kill -0 ${global.activeSandbox.pid}`);
+                isHealthy = true;
+              } catch (error) {
+                isHealthy = false;
+              }
+            }
+            
+            sandboxHealthy = isHealthy;
+            sandboxInfo = {
+              sandboxId: global.activeSandbox.sandboxId,
+              url: global.activeSandbox.url,
+              subdomain: global.activeSandbox.subdomain,
+              userName: global.activeSandbox.userName,
+              port: global.activeSandbox.port,
+              directory: global.activeSandbox.directory,
+              pid: global.activeSandbox.pid,
+              status: isHealthy ? 'running' : 'stopped',
               filesTracked: global.existingFiles ? Array.from(global.existingFiles) : [],
               lastHealthCheck: new Date().toISOString()
             };
-          } else {
+          } catch (error) {
+            console.error('[sandbox-status] VPS health check error:', error);
             sandboxHealthy = false;
+            sandboxInfo = {
+              sandboxId: global.activeSandbox.sandboxId,
+              url: global.activeSandbox.url,
+              error: 'Health check failed',
+              lastHealthCheck: new Date().toISOString()
+            };
           }
         } else {
           // Legacy E2B health check
