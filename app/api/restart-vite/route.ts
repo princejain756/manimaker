@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { appConfig } from '@/config/app.config';
 
 declare global {
   var activeSandbox: any;
@@ -14,6 +15,38 @@ export async function POST() {
     }
     
     console.log('[restart-vite] Forcing Vite restart...');
+    
+    // Check if we're using VPS or E2B
+    if (appConfig.sandbox.type === 'vps') {
+      // Use VPS sandbox restart API
+      const vpsResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/vps-sandbox/manage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'restart',
+          sandboxId: global.activeSandbox.sandboxId
+        })
+      });
+      
+      if (!vpsResponse.ok) {
+        const error = await vpsResponse.json();
+        return NextResponse.json({
+          success: false,
+          error: error.error || 'Failed to restart VPS sandbox'
+        }, { status: 500 });
+      }
+      
+      const result = await vpsResponse.json();
+      
+      return NextResponse.json({
+        success: true,
+        message: result.message,
+        pid: result.pid
+      });
+    }
+    
+    // Legacy E2B code follows...
+    console.log('[restart-vite] Using legacy E2B restart...');
     
     // Kill existing Vite process and restart
     const result = await global.activeSandbox.runCode(`

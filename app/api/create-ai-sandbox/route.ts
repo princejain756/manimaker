@@ -12,10 +12,8 @@ declare global {
 }
 
 export async function POST() {
-  let sandbox: any = null;
-
   try {
-    console.log('[create-ai-sandbox] Creating base sandbox...');
+    console.log('[create-ai-sandbox] Creating VPS sandbox...');
     
     // Kill existing sandbox if any
     if (global.activeSandbox) {
@@ -28,6 +26,10 @@ export async function POST() {
       global.activeSandbox = null;
     }
     
+    // Enable VPS mode
+    global.vpsMode = true;
+    global.vpsFiles = new Map();
+    
     // Clear existing files tracking
     if (global.existingFiles) {
       global.existingFiles.clear();
@@ -35,18 +37,204 @@ export async function POST() {
       global.existingFiles = new Set<string>();
     }
 
-    // Create base sandbox - we'll set up Vite ourselves for full control
-    console.log(`[create-ai-sandbox] Creating base E2B sandbox with ${appConfig.e2b.timeoutMinutes} minute timeout...`);
-    sandbox = await Sandbox.create({ 
-      apiKey: process.env.E2B_API_KEY,
-      timeoutMs: appConfig.e2b.timeoutMs
+    // Initialize VPS sandbox with base React + Vite setup
+    console.log('[create-ai-sandbox] Setting up VPS sandbox with React + Vite...');
+    
+    const baseFiles = [
+      {
+        path: 'package.json',
+        content: JSON.stringify({
+          "name": "manimaker-sandbox",
+          "version": "1.0.0",
+          "type": "module",
+          "scripts": {
+            "dev": "vite --host --port 3001",
+            "build": "vite build",
+            "preview": "vite preview --port 3001"
+          },
+          "dependencies": {
+            "react": "^18.2.0",
+            "react-dom": "^18.2.0"
+          },
+          "devDependencies": {
+            "@vitejs/plugin-react": "^4.0.0",
+            "vite": "^4.3.9",
+            "tailwindcss": "^3.3.0",
+            "postcss": "^8.4.31",
+            "autoprefixer": "^10.4.16"
+          }
+        }, null, 2)
+      },
+      {
+        path: 'vite.config.js',
+        content: `import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+
+export default defineConfig({
+  plugins: [react()],
+  server: {
+    host: '0.0.0.0',
+    port: 3001,
+    strictPort: true
+  },
+  build: {
+    outDir: 'dist'
+  }
+})`
+      },
+      {
+        path: 'index.html',
+        content: `<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Manimaker Preview</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>`
+      },
+      {
+        path: 'src/main.jsx',
+        content: `import React from 'react'
+import ReactDOM from 'react-dom/client'
+import App from './App.jsx'
+import './index.css'
+
+ReactDOM.createRoot(document.getElementById('root')).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>,
+)`
+      },
+      {
+        path: 'src/App.jsx',
+        content: `import React from 'react'
+
+function App() {
+  return (
+    <div className="min-h-screen bg-gray-900 text-white flex items-center justify-center">
+      <div className="text-center">
+        <h1 className="text-4xl font-bold mb-4">Welcome to Manimaker</h1>
+        <p className="text-gray-400">Your VPS sandbox is ready!</p>
+        <div className="mt-8 p-4 bg-gray-800 rounded-lg">
+          <p className="text-sm text-gray-300">Generate some code to see it here</p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export default App`
+      },
+      {
+        path: 'src/index.css',
+        content: `@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  color-scheme: dark;
+  
+  color: rgba(255, 255, 255, 0.87);
+  background-color: #0a0a0a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}`
+      },
+      {
+        path: 'tailwind.config.js',
+        content: `/** @type {import('tailwindcss').Config} */
+export default {
+  content: [
+    "./index.html",
+    "./src/**/*.{js,ts,jsx,tsx}",
+  ],
+  theme: {
+    extend: {},
+  },
+  plugins: [],
+}`
+      },
+      {
+        path: 'postcss.config.js',
+        content: `export default {
+  plugins: {
+    tailwindcss: {},
+    autoprefixer: {},
+  },
+}`
+      }
+    ];
+    
+    // Create VPS sandbox with base setup
+    const vpsResponse = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/vps-sandbox/execute`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        files: baseFiles,
+        command: 'pnpm install && pnpm dev'
+      })
     });
     
-    const sandboxId = (sandbox as any).sandboxId || Date.now().toString();
-    const host = (sandbox as any).getHost(appConfig.e2b.vitePort);
+    const vpsResult = await vpsResponse.json();
     
-    console.log(`[create-ai-sandbox] Sandbox created: ${sandboxId}`);
-    console.log(`[create-ai-sandbox] Sandbox host: ${host}`);
+    if (!vpsResult.success) {
+      throw new Error(vpsResult.error || 'Failed to create VPS sandbox');
+    }
+    
+    const sandboxId = vpsResult.sandboxId;
+    const previewUrl = vpsResult.previewUrl || `http://localhost:${vpsResult.port}`;
+    
+    console.log(`[create-ai-sandbox] VPS sandbox created: ${sandboxId}`);
+    console.log(`[create-ai-sandbox] Preview URL: ${previewUrl}`);
+
+    // Mock sandbox object for compatibility
+    global.activeSandbox = {
+      sandboxId,
+      previewUrl,
+      port: vpsResult.port,
+      files: {
+        write: async (path: string, content: string) => {
+          // Store files for later batch update
+          global.vpsFiles.set(path, content);
+          console.log(`[vps-sandbox] Queued file: ${path}`);
+        }
+      },
+      commands: {
+        run: async (command: string) => {
+          console.log(`[vps-sandbox] Mock command: ${command}`);
+          return { exit_code: 0, stdout: 'Command executed in VPS mode' };
+        }
+      },
+      kill: async () => {
+        // Clean up VPS sandbox
+        try {
+          await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/vps-sandbox/manage?sandboxId=${sandboxId}`, {
+            method: 'DELETE'
+          });
+        } catch (error) {
+          console.error('Failed to cleanup VPS sandbox:', error);
+        }
+        global.activeSandbox = null;
+        global.vpsMode = false;
+        global.vpsFiles?.clear();
+      }
+    };
 
     // Set up a basic Vite React app using Python to write files
     console.log('[create-ai-sandbox] Setting up Vite React app...');

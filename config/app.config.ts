@@ -2,12 +2,15 @@
 // This file contains all configurable settings for the application
 
 export const appConfig = {
-  // E2B Sandbox Configuration
-  e2b: {
+  // Sandbox Configuration (VPS-based)
+  sandbox: {
+    // Sandbox type: 'vps' or 'e2b'
+    type: 'vps' as 'vps' | 'e2b',
+    
     // Sandbox timeout in minutes
     timeoutMinutes: 15,
     
-    // Convert to milliseconds for E2B API
+    // Convert to milliseconds for API
     get timeoutMs() {
       return this.timeoutMinutes * 60 * 1000;
     },
@@ -21,8 +24,29 @@ export const appConfig = {
     // Time to wait for CSS rebuild (in milliseconds)
     cssRebuildDelay: 2000,
     
-    // Default sandbox template (if using templates)
-    defaultTemplate: undefined, // or specify a template ID
+    // VPS Configuration
+    vps: {
+      baseDir: '/var/www/manimaker',
+      sandboxDir: '/var/www/manimaker/sandboxes',
+      domain: 'ai.maninfini.com',
+      nginxConfig: '/etc/nginx/sites-enabled/manimaker',
+      user: 'www-data',
+      group: 'www-data',
+      defaultPort: 3000
+    },
+    
+    // E2B Configuration (legacy)
+    e2b: {
+      defaultTemplate: undefined, // or specify a template ID
+    }
+  },
+
+  // Legacy e2b property for backward compatibility
+  get e2b() {
+    return {
+      ...this.sandbox,
+      ...this.sandbox.e2b
+    };
   },
   
   // AI Model Configuration

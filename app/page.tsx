@@ -497,7 +497,7 @@ function AISandboxPageContent() {
     setScreenshotError(null);
     
     try {
-      const response = await fetch('/api/create-ai-sandbox', {
+      const response = await fetch('/api/create-vps-sandbox', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({})

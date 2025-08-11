@@ -22,9 +22,14 @@ export default function SandboxPreview({
 
   useEffect(() => {
     if (sandboxId && type !== 'console') {
-      // In production, this would be the actual E2B sandbox URL
-      // Format: https://{sandboxId}-{port}.e2b.dev
-      setPreviewUrl(`https://${sandboxId}-${port}.e2b.dev`);
+      // Check if this is a VPS sandbox (based on URL format)
+      if (sandboxId.startsWith('sandbox_')) {
+        // VPS sandbox URL format: https://ai.maninfini.com/{sandboxId}/
+        setPreviewUrl(`https://ai.maninfini.com/${sandboxId}/`);
+      } else {
+        // Legacy E2B sandbox URL format: https://{sandboxId}-{port}.e2b.dev
+        setPreviewUrl(`https://${sandboxId}-${port}.e2b.dev`);
+      }
     }
   }, [sandboxId, port, type]);
 
