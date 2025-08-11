@@ -83,6 +83,39 @@ export async function POST(request: NextRequest) {
     console.log('[generate-ai-code-stream] - context.currentFiles:', context?.currentFiles ? Object.keys(context.currentFiles) : 'none');
     console.log('[generate-ai-code-stream] - currentFiles count:', context?.currentFiles ? Object.keys(context.currentFiles).length : 0);
     
+    // Step 1: Sanitize the prompt using Gemini 2.5 Pro (only for new generation, not edits)
+    let sanitizedPrompt = prompt;
+    let sanitizedData = null;
+    
+    if (!isEdit) {
+      console.log('[generate-ai-code-stream] Sanitizing prompt with Gemini...');
+      try {
+        const sanitizeResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/sanitize-prompt`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt })
+        });
+        
+        if (sanitizeResponse.ok) {
+          const sanitizeResult = await sanitizeResponse.json();
+          if (sanitizeResult.success) {
+            sanitizedPrompt = sanitizeResult.sanitizedPrompt;
+            sanitizedData = sanitizeResult.sanitizedData;
+            console.log('[generate-ai-code-stream] Prompt sanitized successfully');
+            console.log('[generate-ai-code-stream] Original:', prompt);
+            console.log('[generate-ai-code-stream] Sanitized:', sanitizedPrompt);
+          } else {
+            console.warn('[generate-ai-code-stream] Prompt sanitization failed, using original');
+          }
+        } else {
+          console.warn('[generate-ai-code-stream] Sanitize API call failed, using original prompt');
+        }
+      } catch (sanitizeError) {
+        console.error('[generate-ai-code-stream] Sanitization error:', sanitizeError);
+        console.log('[generate-ai-code-stream] Falling back to original prompt');
+      }
+    }
+    
     // Initialize conversation state if not exists
     if (!global.conversationState) {
       global.conversationState = {
@@ -98,14 +131,16 @@ export async function POST(request: NextRequest) {
       };
     }
     
-    // Add user message to conversation history
+    // Add user message to conversation history (use original prompt for history)
     const userMessage: ConversationMessage = {
       id: `msg-${Date.now()}`,
       role: 'user',
-      content: prompt,
+      content: prompt, // Keep original for conversation context
       timestamp: Date.now(),
       metadata: {
-        sandboxId: context?.sandboxId
+        sandboxId: context?.sandboxId,
+        sanitizedPrompt: sanitizedPrompt !== prompt ? sanitizedPrompt : undefined,
+        sanitizedData: sanitizedData
       }
     };
     global.conversationState.context.messages.push(userMessage);
@@ -130,7 +165,7 @@ export async function POST(request: NextRequest) {
         typeof firstFile[1] === 'string' ? firstFile[1].substring(0, 100) + '...' : 'not a string');
     }
     
-    if (!prompt) {
+    if (!sanitizedPrompt) {
       return NextResponse.json({ 
         success: false, 
         error: 'Prompt is required' 
@@ -178,7 +213,7 @@ export async function POST(request: NextRequest) {
               const intentResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/analyze-edit-intent`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ prompt, manifest, model })
+                body: JSON.stringify({ prompt: sanitizedPrompt, manifest, model }) // Use sanitized prompt
               });
               
               if (intentResponse.ok) {
@@ -234,7 +269,7 @@ You have been given the EXACT location of the code to edit.
 - Reason: ${target.reason}
 
 Make ONLY the change requested by the user. Do not modify any other code.
-User request: "${prompt}"`;
+User request: "${sanitizedPrompt}"`;
                     
                     // Set up edit context with just this one file
                     editContext = {
@@ -271,14 +306,14 @@ User request: "${prompt}"`;
               });
               // Fall back to old method on any error if we have a manifest
               if (manifest) {
-                editContext = selectFilesForEdit(prompt, manifest);
+                editContext = selectFilesForEdit(sanitizedPrompt, manifest);
               }
             }
           } else {
             // Fall back to old method if AI analysis fails
             console.warn('[generate-ai-code-stream] AI intent analysis failed, falling back to keyword method');
             if (manifest) {
-              editContext = selectFilesForEdit(prompt, manifest);
+              editContext = selectFilesForEdit(sanitizedPrompt, manifest);
             } else {
               console.log('[generate-ai-code-stream] No manifest available for fallback');
               await sendProgress({ 
@@ -373,7 +408,7 @@ Edit Type: ${searchPlan?.editType || 'UPDATE_COMPONENT'}
 Reasoning: ${searchPlan?.reasoning || 'Modifying based on user request'}
 
 Files to Edit: ${targetFiles.join(', ') || 'To be determined'}
-User Request: "${prompt}"
+User Request: "${sanitizedPrompt}"
 
 ## Your Mandatory Thought Process (Execute Internally):
 Before writing ANY code, you MUST follow these steps:
@@ -553,6 +588,24 @@ Remember: You are a SURGEON making a precise incision, not an artist repainting 
         // Build system prompt with conversation awareness
         const systemPrompt = `You are an expert React developer with perfect memory of the conversation. You maintain context across messages and remember scraped websites, generated components, and applied code. Generate clean, modern React code for Vite applications.
 ${conversationContext}
+
+${sanitizedData ? `
+🎯 STRUCTURED PROJECT REQUIREMENTS (Generated from user prompt):
+- Business Type: ${sanitizedData.businessType}
+- Business Name: ${sanitizedData.businessName}
+- Description: ${sanitizedData.description}
+- Industry: ${sanitizedData.industry}
+- Style: ${sanitizedData.style}
+- Primary Color: ${sanitizedData.colors?.primary || 'blue'}
+- Secondary Color: ${sanitizedData.colors?.secondary || 'white'}
+- Required Sections: ${sanitizedData.sections?.join(', ') || 'hero, about, services, contact'}
+- Key Features: ${sanitizedData.features?.join(', ') || 'responsive design'}
+- Tone: ${sanitizedData.tone}
+- Target Audience: ${sanitizedData.targetAudience}
+- Call to Action: ${sanitizedData.callToAction}
+
+USE THIS STRUCTURED DATA TO CREATE A PROFESSIONAL WEBSITE THAT MATCHES THESE REQUIREMENTS EXACTLY.
+` : ''}
 
 🚨 CRITICAL RULES - YOUR MOST IMPORTANT INSTRUCTIONS:
 1. **DO EXACTLY WHAT IS ASKED - NOTHING MORE, NOTHING LESS**
@@ -898,7 +951,7 @@ CRITICAL: When files are provided in the context:
 5. Make the requested change immediately`;
 
         // Build full prompt with context
-        let fullPrompt = prompt;
+        let fullPrompt = sanitizedPrompt; // Use sanitized prompt instead of original
         if (context) {
           const contextParts = [];
           
@@ -982,7 +1035,7 @@ CRITICAL: When files are provided in the context:
                           
                           // Create edit context from AI analysis
                           // Note: We can't execute search here without file contents, so fall back to keyword method
-                          const fileContext = selectFilesForEdit(prompt, filesData.manifest);
+                          const fileContext = selectFilesForEdit(sanitizedPrompt, filesData.manifest);
                           editContext = fileContext;
                           enhancedSystemPrompt = fileContext.systemPrompt;
                           
@@ -1144,7 +1197,7 @@ CRITICAL: When files are provided in the context:
           }
           
           if (contextParts.length > 0) {
-            fullPrompt = `CONTEXT:\n${contextParts.join('\n')}\n\nUSER REQUEST:\n${prompt}`;
+            fullPrompt = `CONTEXT:\n${contextParts.join('\n')}\n\nUSER REQUEST:\n${sanitizedPrompt}`; // Use sanitized prompt
           }
         }
         
@@ -1585,7 +1638,7 @@ It's better to have 3 complete files than 10 incomplete files.`
                 const completionPrompt = `Complete the following file that was truncated. Provide the FULL file content.
                 
 File: ${filePath}
-Original request: ${prompt}
+Original request: ${sanitizedPrompt}
                 
 Provide the complete file content without any truncation. Include all necessary imports, complete all functions, and close all tags properly.`;
                 
@@ -1673,7 +1726,7 @@ Provide the complete file content without any truncation. Include all necessary 
         if (isEdit && editContext && global.conversationState) {
           const editRecord: ConversationEdit = {
             timestamp: Date.now(),
-            userRequest: prompt,
+            userRequest: sanitizedPrompt,
             editType: editContext.editIntent.type,
             targetFiles: editContext.primaryFiles,
             confidence: editContext.editIntent.confidence,

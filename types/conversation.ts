@@ -10,6 +10,8 @@ export interface ConversationMessage {
     addedPackages?: string[]; // Packages added in this interaction
     editType?: string; // Type of edit performed
     sandboxId?: string; // Sandbox ID at time of message
+    sanitizedPrompt?: string; // Sanitized version of the prompt
+    sanitizedData?: any; // Structured data from prompt sanitization
   };
 }
 
