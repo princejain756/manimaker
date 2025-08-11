@@ -336,26 +336,48 @@ export async function POST(request: NextRequest) {
           fileContent = fileContent.replace(/import\s+['"]\.\/[^'"]+\.css['"];?\s*\n?/g, '');
         }
         
-        console.log(`[apply-ai-code] Writing file to VPS: ${fullPath}`);
+        console.log(`[apply-ai-code] Writing file to sandbox: ${fullPath}`);
         
         try {
-          // Use VPS sandbox execute API
-          const vpsResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/vps-sandbox/execute`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              action: 'writeFile',
-              filePath: normalizedPath,
-              content: fileContent
-            })
-          });
+          // Check if this is a VPS sandbox
+          const isVpsSandbox = global.activeSandbox.directory && !global.activeSandbox.runCode;
           
-          if (!vpsResponse.ok) {
-            const error = await vpsResponse.json();
-            throw new Error(error.error || 'Failed to write file to VPS');
+          if (isVpsSandbox) {
+            // Use VPS sandbox execute API
+            const vpsResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/vps-sandbox/execute`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                action: 'writeFile',
+                filePath: normalizedPath,
+                content: fileContent
+              })
+            });
+            
+            if (!vpsResponse.ok) {
+              const error = await vpsResponse.json();
+              throw new Error(error.error || 'Failed to write file to VPS');
+            }
+            
+            console.log(`[apply-ai-code] Successfully wrote file to VPS: ${fullPath}`);
+          } else {
+            // Use E2B sandbox
+            const result = await global.activeSandbox.runCode(`
+import os
+
+# Ensure directory exists
+file_path = '/home/user/app/${normalizedPath}'
+os.makedirs(os.path.dirname(file_path), exist_ok=True)
+
+# Write the file
+with open(file_path, 'w') as f:
+    f.write('''${fileContent.replace(/'/g, "\\'")}''')
+
+print(f"File written: {file_path}")
+            `);
+            
+            console.log(`[apply-ai-code] Successfully wrote file to E2B: ${fullPath}`);
           }
-          
-          console.log(`[apply-ai-code] Successfully wrote file to VPS: ${fullPath}`);
           
           // Update file cache
           if (global.sandboxState?.fileCache) {
@@ -367,7 +389,7 @@ export async function POST(request: NextRequest) {
           }
           
         } catch (writeError) {
-          console.error(`[apply-ai-code] VPS file write error:`, writeError);
+          console.error(`[apply-ai-code] File write error:`, writeError);
           throw writeError;
         }
         
@@ -446,21 +468,44 @@ function App() {
 export default App;`;
       
       try {
-        const vpsResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/vps-sandbox/execute`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'writeFile',
-            filePath: 'src/App.jsx',
-            content: appContent
-          })
-        });
+        const isVpsSandbox = global.activeSandbox.directory && !global.activeSandbox.runCode;
         
-        if (vpsResponse.ok) {
-          results.filesCreated.push('src/App.jsx (auto-generated)');
+        if (isVpsSandbox) {
+          const vpsResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/vps-sandbox/execute`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'writeFile',
+              filePath: 'src/App.jsx',
+              content: appContent
+            })
+          });
+          
+          if (vpsResponse.ok) {
+            results.filesCreated.push('src/App.jsx (auto-generated)');
+            global.existingFiles.add('src/App.jsx');
+          } else {
+            const error = await vpsResponse.json();
+            results.errors.push(`Failed to create App.jsx: ${error.error}`);
+          }
         } else {
-          const error = await vpsResponse.json();
-          results.errors.push(`Failed to create App.jsx: ${error.error}`);
+          // E2B sandbox
+          const result = await global.activeSandbox.runCode(`
+import os
+
+# Ensure directory exists
+file_path = '/home/user/app/src/App.jsx'
+os.makedirs(os.path.dirname(file_path), exist_ok=True)
+
+# Write the file
+with open(file_path, 'w') as f:
+    f.write('''${appContent.replace(/'/g, "\\'")}''')
+
+print(f"File written: {file_path}")
+          `);
+          
+          results.filesCreated.push('src/App.jsx (auto-generated)');
+          global.existingFiles.add('src/App.jsx');
         }
       } catch (error) {
         results.errors.push(`Failed to create App.jsx: ${(error as Error).message}`);
@@ -503,21 +548,44 @@ body {
   min-height: 100vh;
 }`;
 
-          const vpsResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/vps-sandbox/execute`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              action: 'writeFile',
-              filePath: 'src/index.css',
-              content: indexCssContent
-            })
-          });
+          const isVpsSandbox = global.activeSandbox.directory && !global.activeSandbox.runCode;
           
-          if (vpsResponse.ok) {
-            results.filesCreated.push('src/index.css (with Tailwind)');
+          if (isVpsSandbox) {
+            const vpsResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/vps-sandbox/execute`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                action: 'writeFile',
+                filePath: 'src/index.css',
+                content: indexCssContent
+              })
+            });
+            
+            if (vpsResponse.ok) {
+              results.filesCreated.push('src/index.css (with Tailwind)');
+              global.existingFiles.add('src/index.css');
+            } else {
+              const error = await vpsResponse.json();
+              results.errors.push(`Failed to create index.css: ${error.error}`);
+            }
           } else {
-            const error = await vpsResponse.json();
-            results.errors.push(`Failed to create index.css: ${error.error}`);
+            // E2B sandbox
+            const result = await global.activeSandbox.runCode(`
+import os
+
+# Ensure directory exists
+file_path = '/home/user/app/src/index.css'
+os.makedirs(os.path.dirname(file_path), exist_ok=True)
+
+# Write the file
+with open(file_path, 'w') as f:
+    f.write('''${indexCssContent.replace(/'/g, "\\'")}''')
+
+print(f"File written: {file_path}")
+            `);
+            
+            results.filesCreated.push('src/index.css (with Tailwind)');
+            global.existingFiles.add('src/index.css');
           }
         } catch (error) {
           results.errors.push('Failed to create index.css with Tailwind');
@@ -528,23 +596,48 @@ body {
     // Execute commands
     for (const cmd of parsed.commands) {
       try {
-        const vpsResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/vps-sandbox/execute`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'runCommand',
-            command: cmd
-          })
-        });
+        const isVpsSandbox = global.activeSandbox.directory && !global.activeSandbox.runCode;
         
-        if (vpsResponse.ok) {
-          const cmdResult = await vpsResponse.json();
-          console.log(`[apply-ai-code] Command executed: ${cmd}`);
-          console.log(`[apply-ai-code] Command output: ${cmdResult.stdout}`);
-          results.commandsExecuted.push(cmd);
+        if (isVpsSandbox) {
+          const vpsResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/vps-sandbox/execute`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'runCommand',
+              command: cmd
+            })
+          });
+          
+          if (vpsResponse.ok) {
+            const cmdResult = await vpsResponse.json();
+            console.log(`[apply-ai-code] Command executed: ${cmd}`);
+            console.log(`[apply-ai-code] Command output: ${cmdResult.stdout}`);
+            results.commandsExecuted.push(cmd);
+          } else {
+            const error = await vpsResponse.json();
+            results.errors.push(`Failed to execute ${cmd}: ${error.error}`);
+          }
         } else {
-          const error = await vpsResponse.json();
-          results.errors.push(`Failed to execute ${cmd}: ${error.error}`);
+          // E2B sandbox
+          const result = await global.activeSandbox.runCode(`
+import subprocess
+import os
+
+# Change to app directory
+os.chdir('/home/user/app')
+
+# Execute command
+result = subprocess.run('${cmd}', shell=True, capture_output=True, text=True)
+
+print(f"Command: ${cmd}")
+print(f"Exit code: {result.returncode}")
+print(f"Stdout: {result.stdout}")
+print(f"Stderr: {result.stderr}")
+          `);
+          
+          console.log(`[apply-ai-code] Command executed: ${cmd}`);
+          console.log(`[apply-ai-code] Command output:`, result.logs.stdout.join(''));
+          results.commandsExecuted.push(cmd);
         }
       } catch (error) {
         results.errors.push(`Failed to execute ${cmd}: ${(error as Error).message}`);

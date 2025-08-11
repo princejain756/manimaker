@@ -18,8 +18,127 @@ export async function GET() {
 
     console.log('[get-sandbox-files] Fetching and analyzing file structure...');
     
-    // Get all React/JS/CSS files
-    const result = await global.activeSandbox.runCode(`
+    // Check if this is a VPS sandbox (has directory property)
+    const isVpsSandbox = global.activeSandbox.directory && !global.activeSandbox.runCode;
+    
+    let parsedResult: any;
+    
+    if (isVpsSandbox) {
+      // VPS Sandbox - use file system operations
+      console.log('[get-sandbox-files] Using VPS sandbox file operations...');
+      
+      try {
+        // Get file list from VPS
+        const listResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/vps-sandbox/execute`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'listFiles'
+          })
+        });
+        
+        if (!listResponse.ok) {
+          throw new Error('Failed to list files from VPS sandbox');
+        }
+        
+        const listResult = await listResponse.json();
+        const allFiles = listResult.files || [];
+        
+        // Filter for relevant file types
+        const extensions = ['.jsx', '.js', '.tsx', '.ts', '.css', '.json', '.html'];
+        const relevantFiles = allFiles.filter((file: string) => 
+          extensions.some(ext => file.endsWith(ext)) &&
+          !file.includes('node_modules') &&
+          !file.includes('.git') &&
+          !file.includes('dist') &&
+          !file.includes('build')
+        );
+        
+        console.log(`[get-sandbox-files] Found ${relevantFiles.length} relevant files`);
+        
+        // Read content of each relevant file
+        const files: Record<string, string> = {};
+        
+        for (const filePath of relevantFiles) {
+          try {
+            const readResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/vps-sandbox/execute`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                action: 'readFile',
+                filePath: filePath
+              })
+            });
+            
+            if (readResponse.ok) {
+              const readResult = await readResponse.json();
+              // Only include files under 10KB to avoid huge responses
+              if (readResult.content && readResult.content.length < 10000) {
+                files[filePath] = readResult.content;
+              }
+            }
+          } catch (error) {
+            console.warn(`[get-sandbox-files] Failed to read file ${filePath}:`, error);
+          }
+        }
+        
+        // Build directory structure
+        const structure: string[] = [];
+        const dirMap = new Map<string, string[]>();
+        
+        // Group files by directory
+        allFiles.forEach((file: string) => {
+          const dir = file.includes('/') ? file.substring(0, file.lastIndexOf('/')) : '';
+          if (!dirMap.has(dir)) {
+            dirMap.set(dir, []);
+          }
+          dirMap.get(dir)!.push(file.includes('/') ? file.substring(file.lastIndexOf('/') + 1) : file);
+        });
+        
+        // Build structure representation
+        if (dirMap.has('')) {
+          // Root files
+          structure.push('app/');
+          dirMap.get('')!.forEach(file => {
+            if (!file.includes('node_modules') && !file.includes('.git')) {
+              structure.push(`  ${file}`);
+            }
+          });
+        }
+        
+        // Subdirectories
+        Array.from(dirMap.keys())
+          .filter(dir => dir !== '')
+          .sort()
+          .slice(0, 20) // Limit to prevent huge responses
+          .forEach(dir => {
+            const level = dir.split('/').length;
+            const indent = '  '.repeat(level);
+            structure.push(`${indent}${dir.split('/').pop()}/`);
+            
+            dirMap.get(dir)!.forEach(file => {
+              if (!file.includes('node_modules') && !file.includes('.git')) {
+                structure.push(`${indent}  ${file}`);
+              }
+            });
+          });
+        
+        parsedResult = {
+          files,
+          structure: structure.slice(0, 50).join('\n') // Limit structure to 50 lines
+        };
+        
+        console.log(`[get-sandbox-files] VPS sandbox: processed ${Object.keys(files).length} files`);
+        
+      } catch (error) {
+        console.error('[get-sandbox-files] VPS sandbox error:', error);
+        throw error;
+      }
+    } else {
+      // E2B Sandbox - use Python code execution
+      console.log('[get-sandbox-files] Using E2B sandbox Python operations...');
+      
+      const result = await global.activeSandbox.runCode(`
 import os
 import json
 
@@ -66,10 +185,11 @@ result = {
 }
 
 print(json.dumps(result))
-    `);
+      `);
 
-    const output = result.logs.stdout.join('');
-    const parsedResult = JSON.parse(output);
+      const output = result.logs.stdout.join('');
+      parsedResult = JSON.parse(output);
+    }
     
     // Build enhanced file manifest
     const fileManifest: FileManifest = {

@@ -393,6 +393,17 @@ EOF`);
       'postcss.config.js'
     ]);
 
+    // Initialize sandbox state for file caching
+    global.sandboxState = {
+      fileCache: {
+        files: {},
+        lastSync: Date.now(),
+        sandboxId: sandboxId
+      },
+      sandbox: sandboxData,
+      sandboxData: sandboxData
+    };
+
     console.log(`[vps-sandbox] Sandbox created successfully: ${sandboxData.url}`);
     return sandboxData;
     
