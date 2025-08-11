@@ -261,7 +261,7 @@ body {
         url: sandboxUrl,
         userId,
         sandboxPath
-      }
+      } as any
     };
     
     // Track initial files
