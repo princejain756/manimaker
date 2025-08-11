@@ -28,9 +28,12 @@ export async function POST() {
     console.log(`[create-ai-sandbox] Creating sandbox: ${sandboxId} for user: ${userId} on port 3000`);
 
     try {
+      // Ensure base directories exist first
+      await execAsync(`mkdir -p "/var/www/manimaker/sandboxes"`);
+      
       // Create sandbox directory
-      await execAsync(`sudo mkdir -p "${sandboxPath}"`);
-      await execAsync(`sudo chown www-data:www-data "${sandboxPath}"`);
+      await execAsync(`mkdir -p "${sandboxPath}"`);
+      await execAsync(`chown ubuntu:ubuntu "${sandboxPath}"`);
       console.log(`[create-ai-sandbox] Created directory: ${sandboxPath}`);
     } catch (error) {
       console.error('[create-ai-sandbox] Error in createSandboxDirectory:', error);
@@ -42,7 +45,7 @@ export async function POST() {
       console.log('[create-ai-sandbox] Setting up Vite React app...');
       
       // Create directory structure
-      await execAsync(`sudo mkdir -p "${sandboxPath}/src"`);
+      await execAsync(`mkdir -p "${sandboxPath}/src"`);
       
       // Create package.json
       const packageJson = {
@@ -67,7 +70,7 @@ export async function POST() {
         }
       };
       
-      await execAsync(`echo '${JSON.stringify(packageJson, null, 2)}' | sudo tee ${sandboxPath}/package.json > /dev/null`);
+      await execAsync(`echo '${JSON.stringify(packageJson, null, 2)}' | tee "${sandboxPath}/package.json" > /dev/null`);
       console.log('✓ package.json created');
 
       // Create vite.config.js
@@ -84,7 +87,7 @@ export default defineConfig({
   }
 })`;
       
-      await execAsync(`echo '${viteConfig}' | sudo tee ${sandboxPath}/vite.config.js > /dev/null`);
+      await execAsync(`echo '${viteConfig}' | tee "${sandboxPath}/vite.config.js" > /dev/null`);
       console.log('✓ vite.config.js created');
 
       // Create tailwind.config.js
@@ -100,7 +103,7 @@ export default {
   plugins: [],
 }`;
       
-      await execAsync(`echo '${tailwindConfig}' | sudo tee ${sandboxPath}/tailwind.config.js > /dev/null`);
+      await execAsync(`echo '${tailwindConfig}' | tee "${sandboxPath}/tailwind.config.js" > /dev/null`);
       console.log('✓ tailwind.config.js created');
 
       // Create postcss.config.js
@@ -111,7 +114,7 @@ export default {
   },
 }`;
       
-      await execAsync(`echo '${postcssConfig}' | sudo tee ${sandboxPath}/postcss.config.js > /dev/null`);
+      await execAsync(`echo '${postcssConfig}' | tee "${sandboxPath}/postcss.config.js" > /dev/null`);
       console.log('✓ postcss.config.js created');
 
       // Create index.html
@@ -128,7 +131,7 @@ export default {
   </body>
 </html>`;
       
-      await execAsync(`echo '${indexHtml}' | sudo tee ${sandboxPath}/index.html > /dev/null`);
+      await execAsync(`echo '${indexHtml}' | tee "${sandboxPath}/index.html" > /dev/null`);
       console.log('✓ index.html created');
 
       // Create src/main.jsx
@@ -143,7 +146,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
   </React.StrictMode>,
 )`;
       
-      await execAsync(`echo '${mainJsx}' | sudo tee ${sandboxPath}/src/main.jsx > /dev/null`);
+      await execAsync(`echo '${mainJsx}' | tee "${sandboxPath}/src/main.jsx" > /dev/null`);
       console.log('✓ src/main.jsx created');
 
       // Create src/App.jsx
@@ -162,7 +165,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
 
 export default App`;
       
-      await execAsync(`echo '${appJsx}' | sudo tee ${sandboxPath}/src/App.jsx > /dev/null`);
+      await execAsync(`echo '${appJsx}' | tee "${sandboxPath}/src/App.jsx" > /dev/null`);
       console.log('✓ src/App.jsx created');
 
       // Create src/index.css
@@ -191,19 +194,19 @@ body {
   background-color: rgb(17 24 39);
 }`;
       
-      await execAsync(`echo '${indexCss}' | sudo tee ${sandboxPath}/src/index.css > /dev/null`);
+      await execAsync(`echo '${indexCss}' | tee "${sandboxPath}/src/index.css" > /dev/null`);
       console.log('✓ src/index.css created');
 
       // Set proper permissions
-      await execAsync(`sudo chown -R www-data:www-data "${sandboxPath}"`);
-      await execAsync(`sudo chmod -R 755 "${sandboxPath}"`);
+      await execAsync(`chown -R ubuntu:ubuntu "${sandboxPath}"`);
+      await execAsync(`chmod -R 755 "${sandboxPath}"`);
       
       console.log('[create-ai-sandbox] All files created successfully!');
 
       // Install dependencies
       console.log('[create-ai-sandbox] Installing dependencies...');
       try {
-        await execAsync(`cd "${sandboxPath}" && sudo -u www-data npm install`, { timeout: 60000 });
+        await execAsync(`cd "${sandboxPath}" && npm install`, { timeout: 60000 });
         console.log('✓ Dependencies installed successfully');
       } catch (error) {
         console.log('⚠ Warning: npm install had issues, continuing anyway');
@@ -213,10 +216,10 @@ body {
       console.log('[create-ai-sandbox] Starting Vite dev server...');
       try {
         // Kill any existing processes on port 3000
-        await execAsync(`sudo pkill -f "vite.*--host" || true`);
+        await execAsync(`pkill -f "vite.*--host" || true`);
         
         // Start Vite dev server
-        execAsync(`cd "${sandboxPath}" && sudo -u www-data npm run dev > /tmp/vite-${userId}.log 2>&1 &`);
+        execAsync(`cd "${sandboxPath}" && npm run dev > /tmp/vite-${userId}.log 2>&1 &`);
         console.log(`✓ Vite dev server started for ${userId}`);
         
         // Wait for server to be ready

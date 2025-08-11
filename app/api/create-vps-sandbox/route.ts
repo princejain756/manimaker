@@ -15,8 +15,8 @@ async function createSandboxDirect(userName?: string) {
     nginxConfig: '/etc/nginx/sites-enabled/manimaker',
     domain: 'maninfini.com',
     defaultPort: 3000,
-    user: 'www-data',
-    group: 'www-data'
+    user: 'ubuntu', // Changed from www-data to ubuntu
+    group: 'ubuntu' // Changed from www-data to ubuntu
   };
 
   // Helper functions
@@ -25,7 +25,7 @@ async function createSandboxDirect(userName?: string) {
       const sandbox = global.activeSandbox;
       if (sandbox.pid) {
         try {
-          await execAsync(`sudo kill -9 ${sandbox.pid}`);
+          await execAsync(`kill -9 ${sandbox.pid}`);
         } catch (error) {
           // Ignore if process was already dead
         }
@@ -41,7 +41,7 @@ async function createSandboxDirect(userName?: string) {
     
     for (let port = startPort; port < startPort + 100; port++) {
       try {
-        await execAsync(`sudo netstat -tlnp | grep :${port}`);
+        await execAsync(`netstat -tlnp | grep :${port}`);
         // Port is in use, try next one
       } catch (error) {
         // Port is available
@@ -53,7 +53,7 @@ async function createSandboxDirect(userName?: string) {
   }
 
   async function writeFile(filePath: string, content: string) {
-    await execAsync(`sudo tee ${filePath} > /dev/null << 'EOF'
+    await execAsync(`tee ${filePath} > /dev/null << 'EOF'
 ${content}
 EOF`);
   }
@@ -62,7 +62,7 @@ EOF`);
     console.log('[vps-sandbox] Setting up React Vite app...');
 
     // Create directory structure
-    await execAsync(`sudo mkdir -p "${sandboxDir}/src"`);
+    await execAsync(`mkdir -p "${sandboxDir}/src"`);
 
     // Write package.json
     const packageJson = {
@@ -205,14 +205,14 @@ body {
     await writeFile(`${sandboxDir}/src/index.css`, indexCss);
 
     // Set proper ownership
-    await execAsync(`sudo chown -R ${VPS_CONFIG.user}:${VPS_CONFIG.group} "${sandboxDir}"`);
+    await execAsync(`chown -R ${VPS_CONFIG.user}:${VPS_CONFIG.group} "${sandboxDir}"`);
   }
 
   async function startDevServer(sandboxDir: string, port: number) {
     console.log(`[vps-sandbox] Starting dev server on port ${port}...`);
 
     // Start Vite in background and capture PID
-    const { stdout } = await execAsync(`cd "${sandboxDir}" && sudo -u ${VPS_CONFIG.user} npm run dev -- --port ${port} &> /dev/null & echo $!`);
+    const { stdout } = await execAsync(`cd "${sandboxDir}" && npm run dev -- --port ${port} &> /dev/null & echo $!`);
     const pid = parseInt(stdout.trim());
 
     if (isNaN(pid)) {
@@ -349,15 +349,15 @@ EOF`);
     console.log(`[vps-sandbox] Creating sandbox: ${sandboxId} for user: ${uniqueUserName} on port ${port}`);
 
     // Create sandbox directory
-    await execAsync(`sudo mkdir -p "${sandboxDir}"`);
-    await execAsync(`sudo chown ${VPS_CONFIG.user}:${VPS_CONFIG.group} "${sandboxDir}"`);
+    await execAsync(`mkdir -p "${sandboxDir}"`);
+    await execAsync(`chown ${VPS_CONFIG.user}:${VPS_CONFIG.group} "${sandboxDir}"`);
 
     // Set up React Vite app
     await setupReactViteApp(sandboxDir);
 
     // Install dependencies
     console.log(`[vps-sandbox] Installing dependencies...`);
-    await execAsync(`cd "${sandboxDir}" && sudo -u ${VPS_CONFIG.user} npm install`);
+    await execAsync(`cd "${sandboxDir}" && npm install`);
 
     // Start the development server
     const { pid } = await startDevServer(sandboxDir, port);
