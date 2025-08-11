@@ -114,6 +114,7 @@ function AISandboxPageContent() {
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const authStatus = localStorage.getItem('isAuthenticated');
+      console.log('Auth status from localStorage:', authStatus);
       setIsAuthenticated(authStatus === 'true');
     }
   }, []);
@@ -2783,18 +2784,20 @@ Make this a production-ready website that looks professional and modern.`;
 
   return (
     <div className="font-sans bg-background text-foreground h-screen flex flex-col">
-      {/* Authentication Modal */}
-      <AuthModal 
-        isOpen={!isAuthenticated} 
-        onSuccess={(user) => {
-          setIsAuthenticated(true);
-          localStorage.setItem('isAuthenticated', 'true');
-          localStorage.setItem('user', JSON.stringify(user));
-        }} 
-      />
-      
-      {/* Home Screen Overlay */}
-      {showHomeScreen && (
+      {/* Show ONLY authentication if not authenticated */}
+      {!isAuthenticated ? (
+        <AuthModal 
+          isOpen={true} 
+          onSuccess={(user) => {
+            setIsAuthenticated(true);
+            localStorage.setItem('isAuthenticated', 'true');
+            localStorage.setItem('user', JSON.stringify(user));
+          }} 
+        />
+      ) : (
+        <>
+          {/* Home Screen Overlay */}
+          {showHomeScreen && (
         <div className={`fixed inset-0 z-50 transition-opacity duration-500 ${homeScreenFading ? 'opacity-0' : 'opacity-100'}`}>
           {/* Simple Sun Gradient Background */}
           <div className="absolute inset-0 bg-white overflow-hidden">
@@ -3975,6 +3978,8 @@ Make it look absolutely stunning with the best UI/UX practices for e-commerce.`;
 
 
 
+        </>
+      )}
     </div>
   );
 }
