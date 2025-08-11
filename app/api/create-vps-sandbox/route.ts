@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { appConfig } from '@/config/app.config';
 
 // Use VPS sandbox management
 export async function POST(request: NextRequest) {

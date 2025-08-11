@@ -26,6 +26,9 @@ declare global {
   var activeSandbox: any;
   var sandboxState: SandboxState;
   var existingFiles: Set<string>;
+  var vpsMode: boolean;
+  var vpsFiles: Map<string, any>;
+  var sandboxData: any;
 }
 
 export {};
