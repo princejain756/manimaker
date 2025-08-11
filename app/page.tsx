@@ -500,7 +500,9 @@ function AISandboxPageContent() {
       const response = await fetch('/api/create-vps-sandbox', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({})
+        body: JSON.stringify({
+          userName: user?.name || 'user' // Pass the authenticated user's name
+        })
       });
       
       const data = await response.json();

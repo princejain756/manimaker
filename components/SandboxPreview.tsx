@@ -22,10 +22,14 @@ export default function SandboxPreview({
 
   useEffect(() => {
     if (sandboxId && type !== 'console') {
-      // Check if this is a VPS sandbox (based on URL format)
-      if (sandboxId.startsWith('sandbox_')) {
-        // VPS sandbox URL format: https://ai.maninfini.com/{sandboxId}/
-        setPreviewUrl(`https://ai.maninfini.com/${sandboxId}/`);
+      // Check if this is a VPS sandbox with subdomain (contains userName)
+      if (sandboxId.includes('.maninfini.com') || sandboxId.includes('maninfini.com')) {
+        // Direct subdomain URL
+        setPreviewUrl(sandboxId.startsWith('http') ? sandboxId : `https://${sandboxId}`);
+      } else if (sandboxId.startsWith('sandbox_')) {
+        // VPS sandbox format - construct subdomain URL
+        // This would need the actual subdomain from sandbox data
+        setPreviewUrl(`https://sandbox.maninfini.com`); // Fallback
       } else {
         // Legacy E2B sandbox URL format: https://{sandboxId}-{port}.e2b.dev
         setPreviewUrl(`https://${sandboxId}-${port}.e2b.dev`);

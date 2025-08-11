@@ -28,11 +28,16 @@ export const appConfig = {
     vps: {
       baseDir: '/var/www/manimaker',
       sandboxDir: '/var/www/manimaker/sandboxes',
+      sitesDir: '/var/www/sites',
       domain: 'ai.maninfini.com',
+      baseDomain: 'maninfini.com',
       nginxConfig: '/etc/nginx/sites-enabled/manimaker',
+      nginxSitesDir: '/etc/nginx/sites-available',
+      nginxEnabledDir: '/etc/nginx/sites-enabled',
       user: 'www-data',
       group: 'www-data',
-      defaultPort: 3000
+      defaultPort: 3000,
+      sitePortStart: 4000
     },
     
     // E2B Configuration (legacy)

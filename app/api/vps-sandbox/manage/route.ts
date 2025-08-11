@@ -10,7 +10,7 @@ const VPS_CONFIG = {
   baseDir: '/var/www/manimaker',
   sandboxDir: '/var/www/manimaker/sandboxes',
   nginxConfig: '/etc/nginx/sites-enabled/manimaker',
-  domain: 'ai.maninfini.com',
+  domain: 'maninfini.com',
   defaultPort: 3000,
   user: 'www-data',
   group: 'www-data'
@@ -28,17 +28,19 @@ interface SandboxInfo {
   port: number;
   directory: string;
   url: string;
+  subdomain: string;
+  userName: string;
   pid?: number;
   status: 'creating' | 'running' | 'stopped' | 'error';
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const { action, sandboxId } = await request.json();
+    const { action, sandboxId, userName } = await request.json();
 
     switch (action) {
       case 'create':
-        return await createSandbox();
+        return await createSandbox(userName);
       case 'kill':
         return await killSandbox(sandboxId);
       case 'status':
@@ -57,7 +59,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-async function createSandbox(): Promise<NextResponse> {
+async function createSandbox(userName?: string): Promise<NextResponse> {
   try {
     console.log('[vps-sandbox] Creating new sandbox...');
     
@@ -66,12 +68,20 @@ async function createSandbox(): Promise<NextResponse> {
       await killExistingSandbox();
     }
 
+    // Generate unique user identifier and subdomain
+    const userIdentifier = userName || 'user';
+    const timestamp = Date.now();
+    const randomNum = Math.floor(Math.random() * 100);
+    const uniqueUserName = `${userIdentifier}${randomNum}`;
+    const subdomain = `${uniqueUserName}.${VPS_CONFIG.domain}`;
+
     // Generate unique sandbox ID and port
-    const sandboxId = `sandbox_${Date.now()}`;
+    const sandboxId = `sandbox_${timestamp}`;
     const port = await findAvailablePort();
-    const sandboxDir = path.join(VPS_CONFIG.sandboxDir, sandboxId);
+    const sandboxDir = path.join(VPS_CONFIG.sandboxDir, uniqueUserName);
     
-    console.log(`[vps-sandbox] Creating sandbox: ${sandboxId} on port ${port}`);
+    console.log(`[vps-sandbox] Creating sandbox: ${sandboxId} for user: ${uniqueUserName} on port ${port}`);
+    console.log(`[vps-sandbox] Subdomain: ${subdomain}`);
 
     // Create sandbox directory
     await execAsync(`sudo mkdir -p ${sandboxDir}`);
@@ -86,8 +96,8 @@ async function createSandbox(): Promise<NextResponse> {
     // Start the development server
     const { pid } = await startDevServer(sandboxDir, port);
 
-    // Update Nginx configuration
-    await updateNginxConfig(sandboxId, port);
+    // Update Nginx configuration for subdomain
+    await updateNginxConfig(uniqueUserName, port, subdomain);
 
     // Wait for server to be ready
     await waitForServer(port);
@@ -96,7 +106,9 @@ async function createSandbox(): Promise<NextResponse> {
       sandboxId,
       port,
       directory: sandboxDir,
-      url: `https://${VPS_CONFIG.domain}/${sandboxId}`,
+      url: `https://${subdomain}`,
+      subdomain,
+      userName: uniqueUserName,
       pid,
       status: 'running'
     };
@@ -121,6 +133,8 @@ async function createSandbox(): Promise<NextResponse> {
       success: true,
       sandboxId,
       url: sandboxData.url,
+      subdomain,
+      userName: uniqueUserName,
       port,
       directory: sandboxDir,
       message: 'VPS sandbox created successfully'
@@ -163,7 +177,7 @@ async function killSandbox(sandboxId?: string): Promise<NextResponse> {
       }
 
       // Remove Nginx configuration
-      await removeNginxConfig(sandbox.sandboxId);
+      await removeNginxConfig(sandbox.userName);
 
       // Optionally remove sandbox directory (comment out if you want to keep files)
       // await execAsync(`sudo rm -rf ${sandbox.directory}`);
@@ -281,7 +295,7 @@ async function killExistingSandbox(): Promise<void> {
         // Ignore if process was already dead
       }
     }
-    await removeNginxConfig(sandbox.sandboxId);
+    await removeNginxConfig(sandbox.userName || sandbox.sandboxId);
   }
   global.activeSandbox = null;
   global.sandboxData = null;
@@ -479,15 +493,81 @@ async function startDevServer(sandboxDir: string, port: number): Promise<{ pid: 
   return { pid };
 }
 
-async function updateNginxConfig(sandboxId: string, port: number): Promise<void> {
-  console.log(`[vps-sandbox] Updating Nginx config for ${sandboxId}...`);
+async function updateNginxConfig(userName: string, port: number, subdomain?: string): Promise<void> {
+  console.log(`[vps-sandbox] Updating Nginx config for ${userName}...`);
 
-  // Read current Nginx config
-  const { stdout: currentConfig } = await execAsync(`sudo cat ${VPS_CONFIG.nginxConfig}`);
+  if (subdomain) {
+    // Create a new server block for the subdomain
+    const subdomainConfig = `
+# Server block for user subdomain: ${subdomain}
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${subdomain};
+    return 301 https://$server_name$request_uri;
+}
 
-  // Add location block for the new sandbox
-  const locationBlock = `
-    location /${sandboxId}/ {
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name ${subdomain};
+
+    # Use wildcard SSL certificate for *.maninfini.com
+    ssl_certificate /etc/letsencrypt/live/maninfini.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/maninfini.com/privkey.pem;
+    
+    # SSL Security headers
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
+    
+    # Security headers
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "no-referrer-when-downgrade" always;
+    add_header Content-Security-Policy "default-src 'self' http: https: data: blob: 'unsafe-inline'; connect-src 'self' ws: wss:;" always;
+
+    # Proxy to user's sandbox
+    location / {
+        proxy_pass http://localhost:${port}/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+        
+        # Handle HMR WebSocket connections
+        proxy_set_header Origin http://localhost:${port};
+        proxy_buffering off;
+        proxy_read_timeout 86400;
+        proxy_send_timeout 86400;
+    }
+
+    # Error pages
+    error_page 404 /404.html;
+    error_page 500 502 503 504 /50x.html;
+}
+`;
+
+    // Write subdomain config to a separate file
+    const configPath = `/etc/nginx/sites-available/${userName}.conf`;
+    await execAsync(`sudo tee ${configPath} > /dev/null << 'EOF'
+${subdomainConfig}
+EOF`);
+
+    // Enable the site
+    await execAsync(`sudo ln -sf ${configPath} /etc/nginx/sites-enabled/${userName}.conf`);
+
+  } else {
+    // Fallback: Add location block to main config (legacy behavior)
+    const { stdout: currentConfig } = await execAsync(`sudo cat ${VPS_CONFIG.nginxConfig}`);
+
+    const locationBlock = `
+    location /${userName}/ {
         proxy_pass http://localhost:${port}/;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
@@ -503,42 +583,58 @@ async function updateNginxConfig(sandboxId: string, port: number): Promise<void>
         proxy_buffering off;
     }`;
 
-  // Insert the location block before the last closing brace
-  const updatedConfig = currentConfig.replace(/}(\s*)$/, `${locationBlock}\n}$1`);
+    const updatedConfig = currentConfig.replace(/}(\s*)$/, `${locationBlock}\n}$1`);
 
-  // Write updated config
-  await execAsync(`sudo tee ${VPS_CONFIG.nginxConfig} > /dev/null << 'EOF'
+    await execAsync(`sudo tee ${VPS_CONFIG.nginxConfig} > /dev/null << 'EOF'
 ${updatedConfig}
 EOF`);
+  }
 
   // Test and reload Nginx
   await execAsync('sudo nginx -t');
   await execAsync('sudo systemctl reload nginx');
 
-  console.log(`[vps-sandbox] Nginx config updated and reloaded`);
+  console.log(`[vps-sandbox] Nginx config updated and reloaded for ${userName}`);
 }
 
-async function removeNginxConfig(sandboxId: string): Promise<void> {
+async function removeNginxConfig(userName: string): Promise<void> {
   try {
-    console.log(`[vps-sandbox] Removing Nginx config for ${sandboxId}...`);
+    console.log(`[vps-sandbox] Removing Nginx config for ${userName}...`);
 
-    // Read current Nginx config
-    const { stdout: currentConfig } = await execAsync(`sudo cat ${VPS_CONFIG.nginxConfig}`);
+    // Remove subdomain config file
+    const configPath = `/etc/nginx/sites-enabled/${userName}.conf`;
+    try {
+      await execAsync(`sudo rm -f ${configPath}`);
+      await execAsync(`sudo rm -f /etc/nginx/sites-available/${userName}.conf`);
+      console.log(`[vps-sandbox] Removed subdomain config: ${configPath}`);
+    } catch (error) {
+      console.warn(`[vps-sandbox] Failed to remove subdomain config: ${error}`);
+    }
 
-    // Remove the location block for this sandbox
-    const locationRegex = new RegExp(`\\s*location /${sandboxId}/\\s*{[^}]*}\\s*`, 'g');
-    const updatedConfig = currentConfig.replace(locationRegex, '');
+    // Also clean up any location blocks in main config (legacy cleanup)
+    try {
+      const { stdout: currentConfig } = await execAsync(`sudo cat ${VPS_CONFIG.nginxConfig}`);
 
-    // Write updated config
-    await execAsync(`sudo tee ${VPS_CONFIG.nginxConfig} > /dev/null << 'EOF'
+      // Remove the location block for this user
+      const locationRegex = new RegExp(`\\s*location /${userName}/\\s*{[^}]*}\\s*`, 'g');
+      const updatedConfig = currentConfig.replace(locationRegex, '');
+
+      // Write updated config only if it changed
+      if (updatedConfig !== currentConfig) {
+        await execAsync(`sudo tee ${VPS_CONFIG.nginxConfig} > /dev/null << 'EOF'
 ${updatedConfig}
 EOF`);
+        console.log(`[vps-sandbox] Cleaned up location block for ${userName}`);
+      }
+    } catch (error) {
+      console.warn(`[vps-sandbox] Failed to clean up location block: ${error}`);
+    }
 
     // Test and reload Nginx
     await execAsync('sudo nginx -t');
     await execAsync('sudo systemctl reload nginx');
 
-    console.log(`[vps-sandbox] Nginx config cleaned up for ${sandboxId}`);
+    console.log(`[vps-sandbox] Nginx config cleaned up for ${userName}`);
   } catch (error) {
     console.error(`[vps-sandbox] Error removing Nginx config:`, error);
     // Don't throw - this is cleanup

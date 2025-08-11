@@ -1,10 +1,13 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { appConfig } from '@/config/app.config';
 
 // Use VPS sandbox management
-export async function POST() {
+export async function POST(request: NextRequest) {
   try {
     console.log('[create-vps-sandbox] Creating VPS sandbox...');
+
+    // Get user information from request
+    const { userName } = await request.json();
 
     // Call the VPS sandbox management endpoint
     const response = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/vps-sandbox/manage`, {
@@ -12,7 +15,10 @@ export async function POST() {
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ action: 'create' })
+      body: JSON.stringify({ 
+        action: 'create',
+        userName: userName || 'user' // Default to 'user' if no userName provided
+      })
     });
 
     if (!response.ok) {
@@ -29,10 +35,13 @@ export async function POST() {
       success: true,
       sandboxId: data.sandboxId,
       url: data.url,
+      subdomain: data.subdomain,
+      userName: data.userName,
       port: data.port,
       directory: data.directory,
       message: 'VPS sandbox created and React app initialized',
-      structure: `VPS Sandbox Structure:
+      structure: `VPS Sandbox Structure for ${data.userName}:
+├── Subdomain: ${data.subdomain}
 ├── src/
 │   ├── App.jsx (React component)
 │   ├── main.jsx (Entry point)
