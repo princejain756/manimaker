@@ -27,6 +27,7 @@ import AuthModal from '@/components/AuthModal';
 interface SandboxData {
   sandboxId: string;
   url: string;
+  fallbackUrl?: string;
   [key: string]: any;
 }
 
@@ -450,7 +451,10 @@ function AISandboxPageContent() {
         updateStatus('Sandbox active', true);
         log('Sandbox created successfully!');
         log(`Sandbox ID: ${data.sandboxId}`);
-        log(`URL: ${data.url}`);
+        log(`Primary URL: ${data.url}`);
+        if (data.fallbackUrl) {
+          log(`Fallback URL: ${data.fallbackUrl}`);
+        }
         
         // Update URL with sandbox ID
         const newParams = new URLSearchParams(searchParams.toString());
@@ -2378,14 +2382,14 @@ Focus on the key sections and content, making it clean and modern while preservi
     }
   };
 
-  const captureUrlScreenshot = async (url: string) => {
+  const captureUrlScreenshot = async (url: string, fallbackUrl?: string) => {
     setIsCapturingScreenshot(true);
     setScreenshotError(null);
     try {
       const response = await fetch('/api/scrape-screenshot', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url })
+        body: JSON.stringify({ url, fallbackUrl })
       });
       
       const data = await response.json();
@@ -2393,8 +2397,9 @@ Focus on the key sections and content, making it clean and modern while preservi
         setUrlScreenshot(data.screenshot);
         // Set preparing design state
         setIsPreparingDesign(true);
-        // Store the clean URL for display
-        const cleanUrl = url.replace(/^https?:\/\//i, '');
+        // Store the clean URL for display (use the URL that actually worked)
+        const workingUrl = data.usedUrl || url;
+        const cleanUrl = workingUrl.replace(/^https?:\/\//i, '');
         setTargetUrl(cleanUrl);
         // Switch to preview tab to show the screenshot
         if (activeTab !== 'preview') {

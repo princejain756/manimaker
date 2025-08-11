@@ -14,6 +14,7 @@ async function createSandboxDirect(userName?: string) {
     sandboxDir: '/var/www/manimaker/sandboxes',
     nginxConfig: '/etc/nginx/sites-enabled/manimaker',
     domain: 'maninfini.com',
+    serverIP: '162.55.177.212', // Your VPS IP address
     defaultPort: 3000,
     user: 'ubuntu', // Changed from www-data to ubuntu
     group: 'ubuntu' // Changed from www-data to ubuntu
@@ -372,7 +373,8 @@ EOF`);
       sandboxId,
       port,
       directory: sandboxDir,
-      url: `https://${subdomain}`,
+      url: `https://${subdomain}`, // Primary URL with subdomain
+      fallbackUrl: `http://${VPS_CONFIG.serverIP}:${port}`, // Fallback IP:port for testing
       subdomain,
       userName: uniqueUserName,
       pid,
@@ -431,12 +433,15 @@ export async function POST(request: NextRequest) {
       success: true,
       sandboxId: data.sandboxId,
       url: data.url,
+      fallbackUrl: data.fallbackUrl, // Include fallback URL
       subdomain: data.subdomain,
       userName: data.userName,
       port: data.port,
       directory: data.directory,
       message: 'VPS sandbox created and React app initialized',
       structure: `VPS Sandbox Structure for ${data.userName}:
+├── Primary URL: ${data.url}
+├── Fallback URL: ${data.fallbackUrl}
 ├── Subdomain: ${data.subdomain}
 ├── src/
 │   ├── App.jsx (React component)
