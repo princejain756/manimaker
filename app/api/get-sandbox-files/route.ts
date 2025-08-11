@@ -24,34 +24,58 @@ export async function GET() {
     let parsedResult: any;
     
     if (isVpsSandbox) {
-      // VPS Sandbox - use direct file system operations
+      // VPS Sandbox - use file system operations
       console.log('[get-sandbox-files] Using VPS sandbox file operations...');
       
       try {
-        const { exec } = await import('child_process');
-        const { promisify } = await import('util');
-        const execAsync = promisify(exec);
+        // Get file list from VPS
+        const listResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/vps-sandbox/execute`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'listFiles'
+          })
+        });
         
-        const sandboxDir = global.activeSandbox.directory;
+        if (!listResponse.ok) {
+          throw new Error('Failed to list files from VPS sandbox');
+        }
         
-        // Get file list from VPS filesystem directly
-        const { stdout: fileList } = await execAsync(`find ${sandboxDir} -type f -name "*.jsx" -o -name "*.js" -o -name "*.tsx" -o -name "*.ts" -o -name "*.css" -o -name "*.json" -o -name "*.html" | grep -v node_modules | grep -v .git | head -50`);
+        const listResult = await listResponse.json();
+        const allFiles = listResult.files || [];
         
-        const allFiles = fileList.trim().split('\n').filter(f => f.length > 0);
+        // Filter for relevant file types
+        const extensions = ['.jsx', '.js', '.tsx', '.ts', '.css', '.json', '.html'];
+        const relevantFiles = allFiles.filter((file: string) => 
+          extensions.some(ext => file.endsWith(ext)) &&
+          !file.includes('node_modules') &&
+          !file.includes('.git') &&
+          !file.includes('dist') &&
+          !file.includes('build')
+        );
         
-        console.log(`[get-sandbox-files] Found ${allFiles.length} relevant files`);
+        console.log(`[get-sandbox-files] Found ${relevantFiles.length} relevant files`);
         
         // Read content of each relevant file
         const files: Record<string, string> = {};
         
-        for (const filePath of allFiles) {
+        for (const filePath of relevantFiles) {
           try {
-            const { stdout: content } = await execAsync(`cat "${filePath}" 2>/dev/null || echo ""`);
-            // Only include files under 10KB to avoid huge responses
-            if (content && content.length < 10000) {
-              // Make relative path from sandbox directory
-              const relativePath = filePath.replace(sandboxDir + '/', '');
-              files[relativePath] = content;
+            const readResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/vps-sandbox/execute`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                action: 'readFile',
+                filePath: filePath
+              })
+            });
+            
+            if (readResponse.ok) {
+              const readResult = await readResponse.json();
+              // Only include files under 10KB to avoid huge responses
+              if (readResult.content && readResult.content.length < 10000) {
+                files[filePath] = readResult.content;
+              }
             }
           } catch (error) {
             console.warn(`[get-sandbox-files] Failed to read file ${filePath}:`, error);
@@ -59,48 +83,49 @@ export async function GET() {
         }
         
         // Build directory structure
-        let structure = '';
-        try {
-          const { stdout: treeOutput } = await execAsync(`cd ${sandboxDir} && find . -type d -not -path "./node_modules*" -not -path "./.git*" | head -20 | sort`);
-          const dirs = treeOutput.trim().split('\n');
-          
-          const { stdout: fileOutput } = await execAsync(`cd ${sandboxDir} && find . -type f -not -path "./node_modules*" -not -path "./.git*" | head -30 | sort`);
-          const allFilesList = fileOutput.trim().split('\n');
-          
-          const structureLines = [];
-          structureLines.push('VPS Sandbox Structure:');
-          
-          // Add directories
-          dirs.forEach(dir => {
-            if (dir !== '.') {
-              const level = (dir.match(/\//g) || []).length - 1;
-              const indent = '  '.repeat(level);
-              const dirName = dir.split('/').pop();
-              structureLines.push(`${indent}📁 ${dirName}/`);
+        const structure: string[] = [];
+        const dirMap = new Map<string, string[]>();
+        
+        // Group files by directory
+        allFiles.forEach((file: string) => {
+          const dir = file.includes('/') ? file.substring(0, file.lastIndexOf('/')) : '';
+          if (!dirMap.has(dir)) {
+            dirMap.set(dir, []);
+          }
+          dirMap.get(dir)!.push(file.includes('/') ? file.substring(file.lastIndexOf('/') + 1) : file);
+        });
+        
+        // Build structure representation
+        if (dirMap.has('')) {
+          // Root files
+          structure.push('app/');
+          dirMap.get('')!.forEach(file => {
+            if (!file.includes('node_modules') && !file.includes('.git')) {
+              structure.push(`  ${file}`);
             }
           });
-          
-          // Add files in root
-          allFilesList.forEach(file => {
-            if (file.includes('/')) {
-              const parts = file.split('/');
-              if (parts.length === 2) { // Root level files
-                structureLines.push(`  📄 ${parts[1]}`);
-              }
-            } else if (file !== '.') {
-              structureLines.push(`  📄 ${file}`);
-            }
-          });
-          
-          structure = structureLines.slice(0, 30).join('\n');
-          
-        } catch (error) {
-          structure = 'Error reading directory structure';
         }
+        
+        // Subdirectories
+        Array.from(dirMap.keys())
+          .filter(dir => dir !== '')
+          .sort()
+          .slice(0, 20) // Limit to prevent huge responses
+          .forEach(dir => {
+            const level = dir.split('/').length;
+            const indent = '  '.repeat(level);
+            structure.push(`${indent}${dir.split('/').pop()}/`);
+            
+            dirMap.get(dir)!.forEach(file => {
+              if (!file.includes('node_modules') && !file.includes('.git')) {
+                structure.push(`${indent}  ${file}`);
+              }
+            });
+          });
         
         parsedResult = {
           files,
-          structure
+          structure: structure.slice(0, 50).join('\n') // Limit structure to 50 lines
         };
         
         console.log(`[get-sandbox-files] VPS sandbox: processed ${Object.keys(files).length} files`);

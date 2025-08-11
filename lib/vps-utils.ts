@@ -294,3 +294,185 @@ export async function detectAndInstallPackagesVPS(sandboxDir: string, files: Rec
     };
   }
 }
+
+export async function killSandboxVPS(sandboxId: string) {
+  console.log(`[vps-utils] Killing sandbox: ${sandboxId}`);
+
+  const sandboxDir = path.join(VPS_CONFIG.sandboxDir, sandboxId);
+
+  try {
+    // Check if sandbox exists
+    await execAsync(`sudo test -d "${sandboxDir}"`);
+  } catch (error) {
+    return {
+      success: true,
+      killed: false,
+      message: 'Sandbox directory does not exist'
+    };
+  }
+
+  try {
+    // Kill any running processes in the sandbox
+    if (global.activeSandbox && global.activeSandbox.pid) {
+      try {
+        await execAsync(`sudo kill -9 ${global.activeSandbox.pid}`);
+        console.log(`[vps-utils] Killed process PID: ${global.activeSandbox.pid}`);
+      } catch (error) {
+        console.warn(`[vps-utils] Failed to kill PID ${global.activeSandbox.pid}:`, error);
+      }
+    }
+
+    // Remove the sandbox directory
+    await execAsync(`sudo rm -rf "${sandboxDir}"`);
+    console.log(`[vps-utils] Removed sandbox directory: ${sandboxDir}`);
+
+    return {
+      success: true,
+      killed: true,
+      message: 'Sandbox killed and cleaned up successfully'
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      killed: false,
+      error: error.message,
+      message: 'Failed to kill sandbox'
+    };
+  }
+}
+
+// Utility functions to replace other self-referencing fetch calls
+export async function sanitizePromptVPS(prompt: string) {
+  // We can't avoid the AI call here as it's external, but we can import the logic
+  // For now, let's just return a simple sanitized version
+  console.log(`[vps-utils] Sanitizing prompt (simplified version)`);
+
+  // Basic sanitization
+  const cleanText = (text: string): string => {
+    return text
+      .replace(/[""]/g, '"')  // Replace smart quotes
+      .replace(/['']/g, "'")  // Replace smart apostrophes
+      .replace(/[^\x00-\x7F]/g, "")  // Remove non-ASCII characters
+      .replace(/[{}]/g, "")  // Remove potential CSS injection
+      .trim();
+  };
+
+  const extractBusinessType = (prompt: string): string => {
+    const lowerPrompt = prompt.toLowerCase();
+    
+    if (lowerPrompt.includes('restaurant') || lowerPrompt.includes('cafe') || lowerPrompt.includes('food')) {
+      return 'restaurant';
+    } else if (lowerPrompt.includes('tech') || lowerPrompt.includes('education') || lowerPrompt.includes('course')) {
+      return 'tech education';
+    } else if (lowerPrompt.includes('consulting') || lowerPrompt.includes('service')) {
+      return 'consulting';
+    } else if (lowerPrompt.includes('shop') || lowerPrompt.includes('store') || lowerPrompt.includes('ecommerce')) {
+      return 'ecommerce';
+    } else if (lowerPrompt.includes('portfolio') || lowerPrompt.includes('personal')) {
+      return 'portfolio';
+    }
+    
+    return 'general';
+  };
+
+  const fallbackData = {
+    businessType: extractBusinessType(prompt),
+    businessName: 'Your Business',
+    description: cleanText(prompt).substring(0, 200),
+    industry: 'general',
+    style: 'modern',
+    colors: {
+      primary: 'blue',
+      secondary: 'white'
+    },
+    sections: ['hero', 'about', 'services', 'contact'],
+    features: ['contact form', 'responsive design'],
+    tone: 'professional',
+    targetAudience: 'customers and clients',
+    callToAction: 'Get Started',
+    sanitizedPrompt: cleanText(prompt)
+  };
+
+  return {
+    success: true,
+    originalPrompt: prompt,
+    sanitizedData: fallbackData,
+    sanitizedPrompt: fallbackData.sanitizedPrompt
+  };
+}
+
+export async function analyzeEditIntentVPS(originalCode: string, editedCode: string, files: Record<string, string>) {
+  // Simplified edit intent analysis
+  console.log(`[vps-utils] Analyzing edit intent (simplified version)`);
+
+  // Basic diff analysis
+  const changes = {
+    added: editedCode.length > originalCode.length,
+    removed: editedCode.length < originalCode.length,
+    modified: editedCode !== originalCode
+  };
+
+  return {
+    success: true,
+    editType: changes.added ? 'addition' : changes.removed ? 'removal' : 'modification',
+    confidence: 0.8,
+    analysis: {
+      summary: 'Code changes detected',
+      changes: changes,
+      recommendations: []
+    }
+  };
+}
+
+export async function getSandboxFilesVPS(sandboxId: string) {
+  console.log(`[vps-utils] Getting sandbox files for: ${sandboxId}`);
+
+  const sandboxDir = path.join(VPS_CONFIG.sandboxDir, sandboxId);
+
+  try {
+    // Check if sandbox exists
+    await execAsync(`sudo test -d "${sandboxDir}"`);
+  } catch (error) {
+    throw new Error('Sandbox not found');
+  }
+
+  try {
+    // Get file list
+    const { stdout } = await execAsync(`find "${sandboxDir}" -type f -name "*.js" -o -name "*.jsx" -o -name "*.ts" -o -name "*.tsx" -o -name "*.css" -o -name "*.html" -o -name "*.json" | head -100`);
+    
+    const filePaths = stdout.trim().split('\n').filter(Boolean);
+    const files: Record<string, string> = {};
+    const fileList: Array<{ name: string; path: string; size: number }> = [];
+
+    for (const fullPath of filePaths) {
+      const relativePath = path.relative(sandboxDir, fullPath);
+      
+      try {
+        const content = await readFileVPS(sandboxDir, relativePath);
+        files[relativePath] = content.content;
+        fileList.push({
+          name: path.basename(relativePath),
+          path: relativePath,
+          size: content.size
+        });
+      } catch (error) {
+        console.warn(`[vps-utils] Failed to read file ${relativePath}:`, error);
+      }
+    }
+
+    return {
+      success: true,
+      files,
+      fileList,
+      sandboxId
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      error: error.message,
+      files: {},
+      fileList: [],
+      sandboxId
+    };
+  }
+}

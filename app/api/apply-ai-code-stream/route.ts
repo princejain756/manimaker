@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { Sandbox } from '@e2b/code-interpreter';
+import { exec } from 'child_process';
+import { promisify } from 'util';
 import type { SandboxState } from '@/types/sandbox';
 import type { ConversationState } from '@/types/conversation';
+
+const execAsync = promisify(exec);
 
 declare global {
   var conversationState: ConversationState | null;
@@ -298,33 +301,43 @@ export async function POST(request: NextRequest) {
     let sandbox = global.activeSandbox;
     
     // If we don't have a sandbox in this instance but we have a sandboxId,
-    // reconnect to the existing sandbox
+    // check if VPS sandbox exists
     if (!sandbox && sandboxId) {
-      console.log(`[apply-ai-code-stream] Sandbox ${sandboxId} not in this instance, attempting reconnect...`);
+      console.log(`[apply-ai-code-stream] Sandbox ${sandboxId} not in this instance, checking VPS status...`);
       
       try {
-        // Reconnect to the existing sandbox using E2B's connect method
-        sandbox = await Sandbox.connect(sandboxId, { apiKey: process.env.E2B_API_KEY });
-        console.log(`[apply-ai-code-stream] Successfully reconnected to sandbox ${sandboxId}`);
+        // Check VPS sandbox status instead of reconnecting to E2B
+        const vpsResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/vps-sandbox/manage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'status',
+            sandboxId: sandboxId
+          })
+        });
         
-        // Store the reconnected sandbox globally for this instance
-        global.activeSandbox = sandbox;
-        
-        // Update sandbox data if needed
-        if (!global.sandboxData) {
-          const host = (sandbox as any).getHost(5173);
-          global.sandboxData = {
-            sandboxId,
-            url: `https://${host}`
-          };
-        }
-        
-        // Initialize existingFiles if not already
-        if (!global.existingFiles) {
-          global.existingFiles = new Set<string>();
+        if (vpsResponse.ok) {
+          const vpsStatus = await vpsResponse.json();
+          if (vpsStatus.active && vpsStatus.healthy) {
+            sandbox = vpsStatus.sandboxData;
+            console.log(`[apply-ai-code-stream] VPS sandbox ${sandboxId} is active and healthy`);
+            
+            // Store the sandbox globally for this instance
+            global.activeSandbox = sandbox;
+            global.sandboxData = sandbox;
+            
+            // Initialize existingFiles if not already
+            if (!global.existingFiles) {
+              global.existingFiles = new Set<string>();
+            }
+          } else {
+            throw new Error('VPS sandbox is not healthy or not active');
+          }
+        } else {
+          throw new Error('Failed to check VPS sandbox status');
         }
       } catch (reconnectError) {
-        console.error(`[apply-ai-code-stream] Failed to reconnect to sandbox ${sandboxId}:`, reconnectError);
+        console.error(`[apply-ai-code-stream] Failed to verify VPS sandbox ${sandboxId}:`, reconnectError);
         
         // If reconnection fails, we'll still try to return a meaningful response
         return NextResponse.json({
@@ -525,7 +538,6 @@ export async function POST(request: NextRequest) {
               normalizedPath = 'src/' + normalizedPath;
             }
             
-            const fullPath = `/home/user/app/${normalizedPath}`;
             const isUpdate = global.existingFiles.has(normalizedPath);
             
             // Remove any CSS imports from JSX/JS files (we're using Tailwind)
@@ -534,19 +546,24 @@ export async function POST(request: NextRequest) {
               fileContent = fileContent.replace(/import\s+['"]\.\/[^'"]+\.css['"];?\s*\n?/g, '');
             }
             
-            // Write the file using Python (code-interpreter SDK)
+            // Write the file using VPS commands
             const escapedContent = fileContent
               .replace(/\\/g, '\\\\')
-              .replace(/"""/g, '\\"\\"\\"')
+              .replace(/'/g, "\\'")
               .replace(/\$/g, '\\$');
             
-            await sandboxInstance.runCode(`
-import os
-os.makedirs(os.path.dirname("${fullPath}"), exist_ok=True)
-with open("${fullPath}", 'w') as f:
-    f.write("""${escapedContent}""")
-print(f"File written: ${fullPath}")
-            `);
+            // Get sandbox directory from sandboxInstance (VPS sandbox data)
+            const sandboxDir = sandboxInstance.directory || '/var/www/manimaker/sandboxes/user';
+            const fullPath = `${sandboxDir}/${normalizedPath}`;
+            
+            // Create directory and write file using shell commands
+            await execAsync(`sudo mkdir -p $(dirname "${fullPath}")`);
+            await execAsync(`sudo tee "${fullPath}" > /dev/null << 'EOF'
+${fileContent}
+EOF`);
+            await execAsync(`sudo chown www-data:www-data "${fullPath}"`);
+            
+            console.log(`File written: ${fullPath}`);
             
             // Update file cache
             if (global.sandboxState?.fileCache) {
@@ -599,27 +616,33 @@ print(f"File written: ${fullPath}")
                 action: 'executing'
               });
               
-              // Use E2B commands.run() for cleaner execution
-              const result = await sandboxInstance.commands.run(cmd, {
-                cwd: '/home/user/app',
-                timeout: 60,
-                on_stdout: async (data: string) => {
-                  await sendProgress({
-                    type: 'command-output',
-                    command: cmd,
-                    output: data,
-                    stream: 'stdout'
-                  });
-                },
-                on_stderr: async (data: string) => {
-                  await sendProgress({
-                    type: 'command-output',
-                    command: cmd,
-                    output: data,
-                    stream: 'stderr'
-                  });
-                }
-              });
+              // Use VPS command execution instead of E2B
+              const sandboxDir = sandboxInstance.directory || '/var/www/manimaker/sandboxes/user';
+              const { stdout, stderr } = await execAsync(`cd "${sandboxDir}" && ${cmd}`, { timeout: 60000 });
+              
+              if (stdout) {
+                await sendProgress({
+                  type: 'command-output',
+                  command: cmd,
+                  output: stdout,
+                  stream: 'stdout'
+                });
+              }
+              
+              if (stderr) {
+                await sendProgress({
+                  type: 'command-output',
+                  command: cmd,
+                  output: stderr,
+                  stream: 'stderr'
+                });
+              }
+              
+              const result = {
+                exit_code: 0,
+                stdout: stdout || '',
+                stderr: stderr || ''
+              };
               
               if (results.commandsExecuted) {
                 results.commandsExecuted.push(cmd);
@@ -628,8 +651,8 @@ print(f"File written: ${fullPath}")
               await sendProgress({
                 type: 'command-complete',
                 command: cmd,
-                exitCode: result.exitCode,
-                success: result.exitCode === 0
+                exitCode: result.exit_code,
+                success: result.exit_code === 0
               });
             } catch (error) {
               if (results.errors) {

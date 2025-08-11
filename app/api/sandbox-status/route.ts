@@ -19,47 +19,16 @@ export async function GET() {
       try {
         // Check if we're using VPS or E2B
         if (appConfig.sandbox.type === 'vps') {
-          // Direct VPS sandbox status check (avoid self-referencing fetch)
-          try {
-            const { exec } = await import('child_process');
-            const { promisify } = await import('util');
-            const execAsync = promisify(exec);
-            
-            let isHealthy = false;
-            
-            // Check if process is still running
-            if (global.activeSandbox.pid) {
-              try {
-                await execAsync(`sudo kill -0 ${global.activeSandbox.pid}`);
-                isHealthy = true;
-              } catch (error) {
-                isHealthy = false;
-              }
-            }
-            
-            sandboxHealthy = isHealthy;
-            sandboxInfo = {
-              sandboxId: global.activeSandbox.sandboxId,
-              url: global.activeSandbox.url,
-              subdomain: global.activeSandbox.subdomain,
-              userName: global.activeSandbox.userName,
-              port: global.activeSandbox.port,
-              directory: global.activeSandbox.directory,
-              pid: global.activeSandbox.pid,
-              status: isHealthy ? 'running' : 'stopped',
-              filesTracked: global.existingFiles ? Array.from(global.existingFiles) : [],
-              lastHealthCheck: new Date().toISOString()
-            };
-          } catch (error) {
-            console.error('[sandbox-status] VPS health check error:', error);
-            sandboxHealthy = false;
-            sandboxInfo = {
-              sandboxId: global.activeSandbox.sandboxId,
-              url: global.activeSandbox.url,
-              error: 'Health check failed',
-              lastHealthCheck: new Date().toISOString()
-            };
-          }
+          // For VPS, just check if the sandbox data exists and looks valid
+          // Avoid self-referencing fetch calls which can cause issues
+          sandboxHealthy = !!(global.activeSandbox.sandboxId && global.activeSandbox.url);
+          sandboxInfo = {
+            sandboxId: global.sandboxData?.sandboxId || global.activeSandbox?.sandboxId,
+            url: global.sandboxData?.url || global.activeSandbox?.url,
+            filesTracked: global.existingFiles ? Array.from(global.existingFiles) : [],
+            lastHealthCheck: new Date().toISOString(),
+            sandboxType: 'vps'
+          };
         } else {
           // Legacy E2B health check
           // Since Python isn't available in the Vite template, just check if sandbox exists

@@ -43,19 +43,8 @@ interface ChatMessage {
   };
 }
 
-interface AuthUser {
-  phoneNumber: string;
-  name: string;
-  verified: boolean;
-  token: string;
-}
-
 function AISandboxPageContent() {
-  // Authentication states
-  const [user, setUser] = useState<AuthUser | null>(null);
-  const [showAuthModal, setShowAuthModal] = useState(false);
-  const [authLoading, setAuthLoading] = useState(true);
-  
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [sandboxData, setSandboxData] = useState<SandboxData | null>(null);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState({ text: 'Not connected', active: false });
@@ -121,66 +110,13 @@ function AISandboxPageContent() {
     }
   }, []);
 
-  // Authentication check - Check if user is already authenticated
+  // Check authentication status on component mount
   useEffect(() => {
-    const checkAuth = () => {
-      if (typeof window !== 'undefined') {
-        const authData = localStorage.getItem('maninfini_auth');
-        
-        if (authData) {
-          try {
-            const parsed = JSON.parse(authData);
-            const isExpired = Date.now() - parsed.timestamp > 30 * 24 * 60 * 60 * 1000; // 30 days
-            
-            if (!isExpired && parsed.verified) {
-              setUser({
-                phoneNumber: parsed.phoneNumber,
-                name: parsed.name,
-                verified: parsed.verified,
-                token: parsed.token
-              });
-              
-              // Update welcome message with user's name
-              setChatMessages([{
-                content: `Welcome back, ${parsed.name}! I can help you generate code with full context of your sandbox files and structure. Just start chatting - I'll automatically create a sandbox for you if needed!\n\nTip: If you see package errors like "react-router-dom not found", just type "npm install" or "check packages" to automatically install missing packages.`,
-                type: 'system',
-                timestamp: new Date()
-              }]);
-            } else {
-              // Auth expired
-              localStorage.removeItem('maninfini_auth');
-              setShowAuthModal(true);
-            }
-          } catch (error) {
-            console.error('Error parsing auth data:', error);
-            localStorage.removeItem('maninfini_auth');
-            setShowAuthModal(true);
-          }
-        } else {
-          // No auth data found
-          setShowAuthModal(true);
-        }
-      }
-      setAuthLoading(false);
-    };
-
-    // Small delay to ensure proper mounting
-    const timer = setTimeout(checkAuth, 100);
-    return () => clearTimeout(timer);
+    if (typeof window !== 'undefined') {
+      const authStatus = localStorage.getItem('isAuthenticated');
+      setIsAuthenticated(authStatus === 'true');
+    }
   }, []);
-
-  // Handle successful authentication
-  const handleAuthSuccess = (authUser: AuthUser) => {
-    setUser(authUser);
-    setShowAuthModal(false);
-    
-    // Update welcome message with user's name
-    setChatMessages([{
-      content: `Welcome to Maninfini, ${authUser.name}! I can help you generate code with full context of your sandbox files and structure. Just start chatting - I'll automatically create a sandbox for you if needed!\n\nTip: If you see package errors like "react-router-dom not found", just type "npm install" or "check packages" to automatically install missing packages.`,
-      type: 'system',
-      timestamp: new Date()
-    }]);
-  };
 
   const markWebsiteAsCreated = () => {
     if (typeof window !== 'undefined') {
@@ -501,7 +437,7 @@ function AISandboxPageContent() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          userName: user?.name || 'user' // Pass the authenticated user's name
+          userName: 'user' // Pass a default user name
         })
       });
       
@@ -2845,69 +2781,42 @@ Make this a production-ready website that looks professional and modern.`;
     }, 500);
   };
 
-  // Show loading screen while checking authentication
-  if (authLoading) {
-    return (
-      <div className="h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <div className="w-16 h-16 border-4 border-orange-200 border-t-orange-500 rounded-full animate-spin mx-auto mb-4"></div>
-          <h3 className="text-lg font-medium text-gray-800">Loading Maninfini...</h3>
-          <p className="text-gray-600 text-sm mt-2">Checking authentication</p>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="font-sans bg-background text-foreground h-screen flex flex-col">
       {/* Authentication Modal */}
       <AuthModal 
-        isOpen={showAuthModal} 
-        onSuccess={handleAuthSuccess} 
+        isOpen={!isAuthenticated} 
+        onSuccess={(user) => {
+          setIsAuthenticated(true);
+          localStorage.setItem('isAuthenticated', 'true');
+          localStorage.setItem('user', JSON.stringify(user));
+        }} 
       />
       
-      {/* Only show main app if user is authenticated */}
-      {!user && (
-        <div className="h-screen flex items-center justify-center bg-gray-50">
-          <div className="text-center">
-            <div className="w-16 h-16 bg-gradient-to-br from-orange-400 to-orange-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
-              <svg className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-              </svg>
-            </div>
-            <h3 className="text-lg font-medium text-gray-800">Authentication Required</h3>
-            <p className="text-gray-600 text-sm mt-2">Please verify your phone number to continue</p>
-          </div>
-        </div>
-      )}
-      
-      {/* Main App Content - Only shown when authenticated */}
-      {user && (
-        <>
-          {/* Home Screen Overlay */}
-          {showHomeScreen && (
-            <div className={`fixed inset-0 z-50 transition-opacity duration-500 ${homeScreenFading ? 'opacity-0' : 'opacity-100'}`}>
-              {/* Simple Sun Gradient Background */}
-              <div className="absolute inset-0 bg-white overflow-hidden">
-                {/* Main Sun - Pulsing */}
-                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-gradient-radial from-orange-400/50 via-orange-300/30 to-transparent rounded-full blur-[80px] animate-[sunPulse_4s_ease-in-out_infinite]" />
-                
-                {/* Inner Sun Core - Brighter */}
-                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] bg-gradient-radial from-yellow-300/40 via-orange-400/30 to-transparent rounded-full blur-[40px] animate-[sunPulse_4s_ease-in-out_infinite_0.5s]" />
-                
-                {/* Outer Glow - Subtle */}
-                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[1200px] h-[1200px] bg-gradient-radial from-orange-200/20 to-transparent rounded-full blur-[120px]" />
-                
-                {/* Giant Glowing Orb - Center Bottom */}
-                <div className="absolute bottom-0 left-1/2 w-[800px] h-[800px] animate-[orbShrink_3s_ease-out_forwards]" style={{ transform: 'translateX(-50%) translateY(45%)' }}>
-                  <div className="relative w-full h-full">
-                    <div className="absolute inset-0 bg-orange-600 rounded-full blur-[100px] opacity-30 animate-pulse"></div>
-                    <div className="absolute inset-16 bg-orange-500 rounded-full blur-[80px] opacity-40 animate-pulse" style={{ animationDelay: '0.3s' }}></div>
-                    <div className="absolute inset-32 bg-orange-400 rounded-full blur-[60px] opacity-50 animate-pulse" style={{ animationDelay: '0.6s' }}></div>
-                    <div className="absolute inset-48 bg-yellow-300 rounded-full blur-[40px] opacity-60"></div>
-                  </div>
-                </div>
+      {/* Home Screen Overlay */}
+      {showHomeScreen && (
+        <div className={`fixed inset-0 z-50 transition-opacity duration-500 ${homeScreenFading ? 'opacity-0' : 'opacity-100'}`}>
+          {/* Simple Sun Gradient Background */}
+          <div className="absolute inset-0 bg-white overflow-hidden">
+            {/* Main Sun - Pulsing */}
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-gradient-radial from-orange-400/50 via-orange-300/30 to-transparent rounded-full blur-[80px] animate-[sunPulse_4s_ease-in-out_infinite]" />
+            
+            {/* Inner Sun Core - Brighter */}
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] bg-gradient-radial from-yellow-300/40 via-orange-400/30 to-transparent rounded-full blur-[40px] animate-[sunPulse_4s_ease-in-out_infinite_0.5s]" />
+            
+            {/* Outer Glow - Subtle */}
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[1200px] h-[1200px] bg-gradient-radial from-orange-200/20 to-transparent rounded-full blur-[120px]" />
+            
+            {/* Giant Glowing Orb - Center Bottom */}
+            <div className="absolute bottom-0 left-1/2 w-[800px] h-[800px] animate-[orbShrink_3s_ease-out_forwards]" style={{ transform: 'translateX(-50%) translateY(45%)' }}>
+              <div className="relative w-full h-full">
+                <div className="absolute inset-0 bg-orange-600 rounded-full blur-[100px] opacity-30 animate-pulse"></div>
+                <div className="absolute inset-16 bg-orange-500 rounded-full blur-[80px] opacity-40 animate-pulse" style={{ animationDelay: '0.3s' }}></div>
+                <div className="absolute inset-32 bg-orange-400 rounded-full blur-[60px] opacity-50 animate-pulse" style={{ animationDelay: '0.6s' }}></div>
+                <div className="absolute inset-48 bg-yellow-300 rounded-full blur-[40px] opacity-60"></div>
               </div>
+            </div>
+          </div>
           
           
           {/* Close button on hover */}
@@ -4062,8 +3971,10 @@ Make it look absolutely stunning with the best UI/UX practices for e-commerce.`;
           </div>
         </div>
       </div>
-        </>
-      )}
+
+
+
+
     </div>
   );
 }

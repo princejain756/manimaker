@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import type { SandboxState } from '@/types/sandbox';
 import type { ConversationState } from '@/types/conversation';
-import { writeFileVPS, runCommandVPS, installPackagesVPS, restartViteVPS, detectAndInstallPackagesVPS } from '@/lib/vps-utils';
 
 declare global {
   var conversationState: ConversationState | null;
@@ -192,15 +191,22 @@ export async function POST(request: NextRequest) {
       console.log('[apply-ai-code] Installing packages from XML tags and tool calls:', uniquePackages);
       
       try {
-        // Use direct VPS utilities instead of fetch
-        const installResult = await installPackagesVPS(global.activeSandbox.directory, uniquePackages);
+        const installResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/install-packages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ packages: uniquePackages })
+        });
         
-        if (installResult.success) {
+        if (installResponse.ok) {
+          const installResult = await installResponse.json();
           console.log('[apply-ai-code] Package installation result:', installResult);
-          results.packagesInstalled = uniquePackages;
-        } else {
-          console.error('[apply-ai-code] Package installation failed:', installResult.error);
-          results.packagesFailed = uniquePackages;
+          
+          if (installResult.installed && installResult.installed.length > 0) {
+            results.packagesInstalled = installResult.installed;
+          }
+          if (installResult.failed && installResult.failed.length > 0) {
+            results.packagesFailed = installResult.failed;
+          }
         }
       } catch (error) {
         console.error('[apply-ai-code] Error installing packages:', error);
@@ -228,11 +234,18 @@ export async function POST(request: NextRequest) {
       }
       
       try {
-        console.log('[apply-ai-code] Detecting and installing packages...');
-        // Use direct VPS utilities instead of fetch
-        const packageResult = await detectAndInstallPackagesVPS(global.activeSandbox.directory, filesForPackageDetection);
+        console.log('[apply-ai-code] Calling detect-and-install-packages...');
+        const packageResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/detect-and-install-packages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ files: filesForPackageDetection })
+        });
         
-        console.log('[apply-ai-code] Package detection result:', JSON.stringify(packageResult, null, 2));
+        console.log('[apply-ai-code] Package detection response status:', packageResponse.status);
+        
+        if (packageResponse.ok) {
+          const packageResult = await packageResponse.json();
+          console.log('[apply-ai-code] Package installation result:', JSON.stringify(packageResult, null, 2));
         
         if (packageResult.packagesInstalled && packageResult.packagesInstalled.length > 0) {
           results.packagesInstalled = packageResult.packagesInstalled;
@@ -255,18 +268,27 @@ export async function POST(request: NextRequest) {
           console.log('[apply-ai-code] Packages were installed, forcing Vite restart...');
           
           try {
-            const restartResult = await restartViteVPS(global.activeSandbox.directory);
-            if (restartResult.success) {
+            // Call the restart-vite endpoint
+            const restartResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/restart-vite`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' }
+            });
+            
+            if (restartResponse.ok) {
+              const restartResult = await restartResponse.json();
               console.log('[apply-ai-code] Vite restart result:', restartResult.message);
             } else {
-              console.error('[apply-ai-code] Failed to restart Vite:', restartResult.error);
+              console.error('[apply-ai-code] Failed to restart Vite:', await restartResponse.text());
             }
           } catch (e) {
-            console.error('[apply-ai-code] Error restarting Vite:', e);
+            console.error('[apply-ai-code] Error calling restart-vite:', e);
           }
           
           // Additional delay to ensure files can be written after restart
           await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+        } else {
+          console.error('[apply-ai-code] Package detection/installation failed:', await packageResponse.text());
         }
       } catch (error) {
         console.error('[apply-ai-code] Error detecting/installing packages:', error);

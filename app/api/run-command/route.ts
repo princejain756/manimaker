@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { Sandbox } from '@e2b/code-interpreter';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+
+const execAsync = promisify(exec);
 
 // Get active sandbox from global state (in production, use a proper state management solution)
 declare global {
@@ -26,29 +29,23 @@ export async function POST(request: NextRequest) {
     
     console.log(`[run-command] Executing: ${command}`);
     
-    const result = await global.activeSandbox.runCode(`
-import subprocess
-import os
-
-os.chdir('/home/user/app')
-result = subprocess.run(${JSON.stringify(command.split(' '))}, 
-                       capture_output=True, 
-                       text=True, 
-                       shell=False)
-
-print("STDOUT:")
-print(result.stdout)
-if result.stderr:
-    print("\\nSTDERR:")
-    print(result.stderr)
-print(f"\\nReturn code: {result.returncode}")
-    `);
+    // Execute command in VPS sandbox directory
+    const sandboxDir = global.activeSandbox.directory || '/var/www/manimaker/sandboxes/user';
+    const { stdout, stderr } = await execAsync(`cd "${sandboxDir}" && ${command}`, { timeout: 30000 });
     
-    const output = result.logs.stdout.join('\n');
+    let output = '';
+    if (stdout) {
+      output += `STDOUT:\n${stdout}`;
+    }
+    if (stderr) {
+      output += stdout ? `\n\nSTDERR:\n${stderr}` : `STDERR:\n${stderr}`;
+    }
     
     return NextResponse.json({
       success: true,
       output,
+      stdout,
+      stderr,
       message: 'Command executed successfully'
     });
     
