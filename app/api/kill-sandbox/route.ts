@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import { appConfig } from '@/config/app.config';
-import { killSandboxVPS } from '@/lib/vps-utils';
 
 declare global {
   var activeSandbox: any;
@@ -16,14 +15,22 @@ export async function POST() {
     
     // Check if we're using VPS or E2B
     if (appConfig.sandbox.type === 'vps' && global.activeSandbox) {
-      // Use VPS utilities directly
-      const result = await killSandboxVPS(global.activeSandbox.sandboxId);
+      // Use VPS sandbox management API
+      const vpsResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/vps-sandbox/manage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'kill',
+          sandboxId: global.activeSandbox.sandboxId
+        })
+      });
       
-      if (result.success) {
-        sandboxKilled = result.killed;
+      if (vpsResponse.ok) {
+        const result = await vpsResponse.json();
+        sandboxKilled = result.killed || result.success;
         console.log('[kill-sandbox] VPS sandbox killed successfully');
       } else {
-        console.warn('[kill-sandbox] Failed to kill VPS sandbox:', result.error);
+        console.warn('[kill-sandbox] Failed to kill VPS sandbox via API');
       }
     } else if (global.activeSandbox) {
       // Legacy E2B code

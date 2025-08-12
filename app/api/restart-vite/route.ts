@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import { appConfig } from '@/config/app.config';
-import { restartViteVPS } from '@/lib/vps-utils';
 
 declare global {
   var activeSandbox: any;
@@ -19,15 +18,25 @@ export async function POST() {
     
     // Check if we're using VPS or E2B
     if (appConfig.sandbox.type === 'vps') {
-      // Use VPS utilities directly
-      const result = await restartViteVPS(global.activeSandbox.sandboxId);
+      // Use VPS sandbox restart API
+      const vpsResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/vps-sandbox/manage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'restart',
+          sandboxId: global.activeSandbox.sandboxId
+        })
+      });
       
-      if (!result.success) {
+      if (!vpsResponse.ok) {
+        const error = await vpsResponse.json();
         return NextResponse.json({
           success: false,
-          error: result.error || 'Failed to restart VPS sandbox'
+          error: error.error || 'Failed to restart VPS sandbox'
         }, { status: 500 });
       }
+      
+      const result = await vpsResponse.json();
       
       return NextResponse.json({
         success: true,

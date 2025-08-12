@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { appConfig } from '@/config/app.config';
-import { installPackagesVPS } from '@/lib/vps-utils';
 
 declare global {
   var activeSandbox: any;
@@ -49,22 +48,32 @@ export async function POST(request: NextRequest) {
     
     // Check if we're using VPS or E2B
     if (appConfig.sandbox.type === 'vps') {
-      // Use direct VPS utilities instead of fetch
-      const vpsResult = await installPackagesVPS(global.activeSandbox.directory, validPackages);
+      // Use VPS sandbox execute API for package installation
+      const vpsResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/vps-sandbox/execute`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'installPackages',
+          packages: validPackages
+        })
+      });
       
-      if (!vpsResult.success) {
+      if (!vpsResponse.ok) {
+        const error = await vpsResponse.json();
         return NextResponse.json({
           success: false,
-          error: vpsResult.error || 'Failed to install packages'
+          error: error.error || 'Failed to install packages'
         }, { status: 500 });
       }
+      
+      const result = await vpsResponse.json();
       
       return NextResponse.json({
         success: true,
         installed: validPackages,
-        message: vpsResult.message,
-        stdout: vpsResult.stdout || '',
-        stderr: vpsResult.stderr || ''
+        message: result.message,
+        stdout: result.stdout,
+        stderr: result.stderr
       });
     }
     

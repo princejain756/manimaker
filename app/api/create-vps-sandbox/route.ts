@@ -12,8 +12,8 @@ async function createSandboxDirect(userName?: string) {
   const VPS_CONFIG = {
     baseDir: '/var/www/manimaker',
     sandboxDir: '/var/www/manimaker/sandboxes',
-    nginxConfig: '/etc/nginx/sites-enabled/manimaker',
-    domain: 'maninfini.com',
+    nginxConfig: '/etc/nginx/sites-enabled/ai-manimaker',
+    domain: 'ai.maninfini.com', // Changed to AI subdomain only
     serverIP: '162.55.177.212', // Your VPS IP address
     defaultPort: 3000,
     user: 'ubuntu', // Changed from www-data to ubuntu
