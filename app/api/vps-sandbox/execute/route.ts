@@ -10,8 +10,8 @@ const execAsync = promisify(exec);
 const VPS_CONFIG = {
   baseDir: '/var/www/manimaker',
   sandboxDir: '/var/www/manimaker/sandboxes',
-  user: 'www-data',
-  group: 'www-data'
+  user: 'ubuntu',
+  group: 'ubuntu'
 };
 
 declare global {

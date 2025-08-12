@@ -8,6 +8,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'URL is required' }, { status: 400 });
     }
 
+    if (!process.env.FIRECRAWL_API_KEY) {
+      return NextResponse.json({
+        success: false,
+        error: 'FIRECRAWL_API_KEY is not set on the server'
+      }, { status: 500 });
+    }
+
     // Try primary URL first, then fallback URL if provided
     const urlsToTry = [url];
     if (fallbackUrl) {
@@ -43,8 +50,8 @@ export async function POST(req: NextRequest) {
         });
 
         if (!firecrawlResponse.ok) {
-          const error = await firecrawlResponse.text();
-          throw new Error(`Firecrawl API error: ${error}`);
+          const errorText = await firecrawlResponse.text();
+          throw new Error(`Firecrawl API error (${firecrawlResponse.status}): ${errorText}`);
         }
 
         const data = await firecrawlResponse.json();
@@ -61,7 +68,7 @@ export async function POST(req: NextRequest) {
         });
 
       } catch (error: any) {
-        console.error(`Screenshot failed for ${tryUrl}:`, error);
+        console.error(`Screenshot failed for ${tryUrl}:`, error?.message || error);
         lastError = error;
         continue; // Try next URL
       }
@@ -71,9 +78,10 @@ export async function POST(req: NextRequest) {
     throw lastError || new Error('All screenshot attempts failed');
 
   } catch (error: any) {
-    console.error('Screenshot capture error:', error);
+    console.error('Screenshot capture error:', error?.message || error);
     return NextResponse.json({ 
-      error: error.message || 'Failed to capture screenshot' 
+      success: false,
+      error: error?.message || 'Failed to capture screenshot' 
     }, { status: 500 });
   }
 }

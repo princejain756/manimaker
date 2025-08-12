@@ -10,10 +10,10 @@ const VPS_CONFIG = {
   baseDir: '/var/www/manimaker',
   sandboxDir: '/var/www/manimaker/sandboxes',
   nginxConfig: '/etc/nginx/sites-enabled/manimaker',
-  domain: 'maninfini.com',
+  domain: 'ai.maninfini.com',
   defaultPort: 3000,
-  user: 'www-data',
-  group: 'www-data'
+  user: 'ubuntu',
+  group: 'ubuntu'
 };
 
 // Store active sandbox globally

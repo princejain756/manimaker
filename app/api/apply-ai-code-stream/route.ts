@@ -561,7 +561,7 @@ export async function POST(request: NextRequest) {
             await execAsync(`sudo tee "${fullPath}" > /dev/null << 'EOF'
 ${fileContent}
 EOF`);
-            await execAsync(`sudo chown www-data:www-data "${fullPath}"`);
+            await execAsync(`sudo chown ubuntu:ubuntu "${fullPath}"`);
             
             console.log(`File written: ${fullPath}`);
             

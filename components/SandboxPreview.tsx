@@ -27,12 +27,11 @@ export default function SandboxPreview({
         // Direct subdomain URL
         setPreviewUrl(sandboxId.startsWith('http') ? sandboxId : `https://${sandboxId}`);
       } else if (sandboxId.startsWith('sandbox_')) {
-        // VPS sandbox format - construct subdomain URL
-        // This would need the actual subdomain from sandbox data
-        setPreviewUrl(`https://sandbox.maninfini.com`); // Fallback
+        // VPS sandbox format - without explicit subdomain, use safe fallback
+        setPreviewUrl(`https://sandbox.maninfini.com`);
       } else {
-        // Legacy E2B sandbox URL format: https://{sandboxId}-{port}.e2b.dev
-        setPreviewUrl(`https://${sandboxId}-${port}.e2b.dev`);
+        // Remove legacy E2B fallback. Use neutral placeholder instead of e2b.
+        setPreviewUrl('about:blank');
       }
     }
   }, [sandboxId, port, type]);

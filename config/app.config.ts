@@ -30,8 +30,8 @@ export const appConfig = {
       sandboxDir: '/var/www/manimaker/sandboxes',
       domain: 'ai.maninfini.com',
       nginxConfig: '/etc/nginx/sites-enabled/manimaker',
-      user: 'www-data',
-      group: 'www-data',
+      user: 'ubuntu',
+      group: 'ubuntu',
       defaultPort: 3000
     },
     
