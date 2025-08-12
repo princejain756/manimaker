@@ -176,11 +176,22 @@ export async function POST(request: NextRequest) {
     const encoder = new TextEncoder();
     const stream = new TransformStream();
     const writer = stream.writable.getWriter();
+    let streamClosed = false;
     
     // Function to send progress updates
     const sendProgress = async (data: any) => {
-      const message = `data: ${JSON.stringify(data)}\n\n`;
-      await writer.write(encoder.encode(message));
+      try {
+        if (streamClosed) {
+          console.log('[generate-ai-code-stream] Stream already closed, skipping progress update');
+          return;
+        }
+        const message = `data: ${JSON.stringify(data)}\n\n`;
+        await writer.write(encoder.encode(message));
+      } catch (error) {
+        console.error('[generate-ai-code-stream] Error sending progress:', error);
+        streamClosed = true;
+        // Don't rethrow - just log and continue
+      }
     };
     
     // Start processing in background
@@ -1753,8 +1764,18 @@ Provide the complete file content without any truncation. Include all necessary 
       } catch (error) {
         console.error('[generate-ai-code-stream] Stream processing error:', error);
         
+        // Check for client disconnect or stream closed errors
+        const errorMessage = (error as any).message || '';
+        if (errorMessage.includes('ResponseAborted') || 
+            errorMessage.includes('WritableStream is closed') ||
+            errorMessage.includes('ERR_INVALID_STATE')) {
+          console.log('[generate-ai-code-stream] Client disconnected or stream closed, ending processing');
+          streamClosed = true;
+          return; // Exit gracefully without trying to send more data
+        }
+        
         // Check if it's a tool validation error
-        if ((error as any).message?.includes('tool call validation failed')) {
+        if (errorMessage.includes('tool call validation failed')) {
           console.error('[generate-ai-code-stream] Tool call validation error - this may be due to the AI model sending incorrect parameters');
           await sendProgress({ 
             type: 'warning', 
@@ -1764,11 +1785,18 @@ Provide the complete file content without any truncation. Include all necessary 
         } else {
           await sendProgress({ 
             type: 'error', 
-            error: (error as Error).message 
+            error: errorMessage 
           });
         }
       } finally {
-        await writer.close();
+        try {
+          if (!streamClosed) {
+            await writer.close();
+            streamClosed = true;
+          }
+        } catch (closeError) {
+          console.error('[generate-ai-code-stream] Error closing stream:', closeError);
+        }
       }
     })();
     
